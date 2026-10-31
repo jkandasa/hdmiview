@@ -14,7 +14,8 @@ import (
 	"unsafe"
 )
 
-// Minimal V4L2 capture (mmap streaming I/O, 64-bit Linux struct layouts):
+// Minimal V4L2 capture (mmap streaming I/O; the two structs whose layout
+// differs between 32- and 64-bit ABIs live in v4l2_32.go / v4l2_64.go):
 // MJPEG frames are passed through, YUYV frames are encoded to JPEG.
 
 const (
@@ -53,13 +54,6 @@ type v4l2PixFormat struct {
 	Colorspace, Priv, Flags, YcbcrEnc, Quantization, XferFunc  uint32
 }
 
-type v4l2Format struct {
-	Type uint32
-	_    uint32 // union is 8-byte aligned
-	Pix  v4l2PixFormat
-	_    [200 - 48]byte
-}
-
 type v4l2Streamparm struct {
 	Type                      uint32
 	Capability, CaptureMode   uint32
@@ -73,18 +67,6 @@ type v4l2RequestBuffers struct {
 	Count, Type, Memory, Capabilities uint32
 	Flags                             uint8
 	_                                 [3]uint8
-}
-
-type v4l2Buffer struct {
-	Index, Type, BytesUsed, Flags, Field uint32
-	_                                    uint32
-	TsSec, TsUsec                        int64
-	Timecode                             [16]byte
-	Sequence, Memory                     uint32
-	Offset                               uint32 // union m (low half on little endian)
-	_                                    uint32
-	Length, Reserved2, RequestFD         uint32
-	_                                    uint32
 }
 
 type v4l2FmtDesc struct {
@@ -128,12 +110,12 @@ type v4l2QueryMenu struct {
 }
 
 func init() {
-	// Guard against running on an ABI whose layouts differ (e.g. 32-bit ARM).
+	// Guard against a struct layout that does not match the kernel ABI.
 	sizes := []struct {
 		got, want uintptr
 	}{
-		{unsafe.Sizeof(v4l2Format{}), 208}, {unsafe.Sizeof(v4l2Streamparm{}), 204},
-		{unsafe.Sizeof(v4l2RequestBuffers{}), 20}, {unsafe.Sizeof(v4l2Buffer{}), 88},
+		{unsafe.Sizeof(v4l2Format{}), sizeofV4L2Format}, {unsafe.Sizeof(v4l2Streamparm{}), 204},
+		{unsafe.Sizeof(v4l2RequestBuffers{}), 20}, {unsafe.Sizeof(v4l2Buffer{}), sizeofV4L2Buffer},
 		{unsafe.Sizeof(v4l2FmtDesc{}), 64}, {unsafe.Sizeof(v4l2FrmSizeEnum{}), 44},
 		{unsafe.Sizeof(v4l2FrmIvalEnum{}), 52}, {unsafe.Sizeof(v4l2QueryCtrl{}), 68},
 		{unsafe.Sizeof(v4l2Control{}), 8}, {unsafe.Sizeof(v4l2QueryMenu{}), 44},

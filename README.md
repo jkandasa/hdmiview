@@ -2,9 +2,9 @@
 
 Tools for cheap **MacroSilicon MS2109** USB HDMI capture dongles (USB ID `534d:2109`):
 
-- **`hdmiview`** – watch and record the HDMI input in a web browser: live video,
+- **`hdmiview`**: watch and record the HDMI input in a web browser: live video,
   stereo audio, picture controls, video mode switching, snapshots and recording.
-- **`ms2109tool`** – back up, inspect, patch and flash the dongle's EEPROM firmware
+- **`ms2109tool`**: back up, inspect, patch and flash the dongle's EEPROM firmware
   over its HID interface.
 
 Both are single Go binaries with no third-party Go dependencies. Linux only.
@@ -18,14 +18,20 @@ Both are single Go binaries with no third-party Go dependencies. Linux only.
 
 ## Download
 
-Prebuilt binaries for Linux amd64 and arm64 are on the
+Prebuilt binaries are on the
 [releases page](https://github.com/jkandasa/hdmiview/releases):
 
-- **`v*` releases** – tagged versions.
-- **`devel`** – rolling pre-release, rebuilt from every commit on `main`.
+- **`v*` releases**: tagged versions.
+- **`devel`**: rolling pre-release, rebuilt from every commit on `main`.
 
-Each archive contains `hdmiview`, `ms2109tool`, this README, the licence and
-the udev rule. Check downloads against `SHA256SUMS`.
+Each tool has its own archive for Linux `amd64`, `arm64` and `arm` (ARMv7,
+e.g. Raspberry Pi OS 32-bit):
+
+- `hdmiview-<version>-linux-<arch>.tar.gz`
+- `ms2109tool-<version>-linux-<arch>.tar.gz` (includes the udev rule)
+
+Each archive also contains this README and the licence. Check downloads
+against `SHA256SUMS`.
 
 ## Build
 
@@ -84,7 +90,7 @@ Open <http://127.0.0.1:8080/>.
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Video     | MJPEG straight from the chip (no re-encoding), or uncompressed YUYV encoded to JPEG on the server. Format, resolution and frame rate are chosen from what the device reports. Fit / 1:1 / fullscreen.                                                                       |
 | Picture   | Brightness, contrast, saturation and hue sliders with reset to the device default.                                                                                                                                                                                          |
-| Audio     | 48 kHz stereo through Web Audio with about 50–250 ms latency. Volume up to 300%, mute, channel mode (stereo, swap, mono, left, right), latency setting and level meters. Audio starts automatically; if the browser blocks autoplay, the first click on the page starts it. |
+| Audio     | 48 kHz stereo through Web Audio with about 50 to 250 ms latency. Volume up to 300%, mute, channel mode (stereo, swap, mono, left, right), latency setting and level meters. Audio starts automatically; if the browser blocks autoplay, the first click on the page starts it. |
 | Recording | Server side with ffmpeg, so it keeps going when the page is closed. MP4 (H.264 + AAC) or MKV (original MJPEG + PCM). Audio and video stay in sync to within about 10 ms.                                                                                                    |
 | Snapshots | Saved as JPEG on the server.                                                                                                                                                                                                                                                |
 | Files     | Recordings and snapshots can be listed, downloaded and deleted from the page. Their folders can be changed from the page.                                                                                                                                                   |
@@ -232,9 +238,9 @@ HID protocol: 9-byte feature reports. `0xB5`/`0xB6` read and write XDATA,
 
 ## Credits
 
-- [BertoldVdb/ms-tools](https://github.com/BertoldVdb/ms-tools) – the MS2109 HID protocol and memory map
-- [matiaspl/MS2109-Pro](https://github.com/matiaspl/MS2109-Pro) – the firmware improvements `build-pro` is based on
-- [Forest178/ms21xx-firmware-research](https://github.com/Forest178/ms21xx-firmware-research) – EEPROM layout and checksums
+- [BertoldVdb/ms-tools](https://github.com/BertoldVdb/ms-tools): the MS2109 HID protocol and memory map
+- [matiaspl/MS2109-Pro](https://github.com/matiaspl/MS2109-Pro): the firmware improvements `build-pro` is based on
+- [Forest178/ms21xx-firmware-research](https://github.com/Forest178/ms21xx-firmware-research): EEPROM layout and checksums
 
 ## Disclaimer
 

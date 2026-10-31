@@ -434,7 +434,7 @@ function renderRec(st) {
   $("recFmt").disabled = $("recQual").disabled = st.active;
   if (st.error) setMsg("recMsg", st.error, true);
   else if (st.active && !st.frames && st.seconds >= 3) setMsg("recMsg", "Recording, but waiting for video: is the capture device in use by another program?", true);
-  else setMsg("recMsg", st.active ? `Recording ${st.file} — continues if you close this page.` : `Saved to ${st.dir} on the server.`);
+  else setMsg("recMsg", st.active ? `Recording ${st.file}. It continues if you close this page.` : `Saved to ${st.dir} on the server.`);
 
   if (st.recordings) {
     $("recList").innerHTML = "";
@@ -466,7 +466,7 @@ function recFormUI() {
   const mp4 = $("recFmt").value === "mp4";
   $("recQualRow").style.display = mp4 ? "" : "none";
   $("recHint").textContent = mp4
-    ? "H.264 + AAC, encoded on the server CPU. Roughly 0.5–2 GB per hour for console content."
+    ? "H.264 + AAC, encoded on the server CPU. Roughly 0.5 to 2 GB per hour for console content."
     : "Stores the capture chip's MJPEG frames untouched with lossless audio. Almost no CPU, ~9 GB per hour at 1080p30.";
 }
 $("recFmt").onchange = () => { recPrefs.format = $("recFmt").value; localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs)); recFormUI(); };
