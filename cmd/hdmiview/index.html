@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HDMI View</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  button, select, a.btn { background: #333; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 10px; font: inherit; cursor: pointer; text-decoration: none; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.on { background: #2d5a2d; border-color: #3c7a3c; }
+  select { padding: 3px 6px; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: #1c1c1c; flex-wrap: wrap; }
+  #stats { margin-left: auto; font-variant-numeric: tabular-nums; color: #999; }
+  #main { flex: 1; min-height: 0; display: flex; }
+  #wrap { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; }
+  #video { max-width: 100%; max-height: 100%; object-fit: contain; background: #000; }
+  #wrap.native #video { max-width: none; max-height: none; }
+  #wrap.native { overflow: auto; align-items: flex-start; justify-content: flex-start; }
+  #wrap:fullscreen { background: #000; }
+  #recBtn.rec { background: #8a1f1f; border-color: #b33; }
+  #recBtn.rec::before { content: "● "; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #recList { list-style: none; padding: 0; margin: 6px 0; font-size: 12px; }
+  #recList li { display: flex; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid #262626; }
+  #recList li span.n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #recList li span.s { color: #888; font-variant-numeric: tabular-nums; }
+  #recList a, #recList button { font-size: 12px; padding: 1px 6px; }
+  #recList a, #snapList a { color: #9cf; }
+  #snapList { list-style: none; padding: 0; margin: 6px 0; font-size: 12px; }
+  #snapList li { display: flex; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid #262626; }
+  #snapList li span.n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #snapList li span.s { color: #888; font-variant-numeric: tabular-nums; }
+  #snapList button { font-size: 12px; padding: 1px 6px; }
+  .folder { display: flex; gap: 6px; margin: 4px 0 8px; }
+  .folder input { flex: 1; min-width: 0; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; font: 12px ui-monospace, monospace; }
+  .flabel { font-size: 12px; color: #aaa; }
+  #toast { position: fixed; right: 14px; bottom: 14px; background: #222; border: 1px solid #3a3a3a; border-radius: 6px; padding: 8px 12px; box-shadow: 0 4px 16px #0008; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 60vw; }
+  #toast.show { opacity: 1; pointer-events: auto; }
+  #toast.err { border-color: #a33; color: #f99; }
+  #toast a { color: #9cf; }
+  #panel { width: 320px; overflow-y: auto; background: #1a1a1a; border-left: 1px solid #2a2a2a; padding: 4px 14px 14px; box-sizing: border-box; }
+  #panel[hidden] { display: none; }
+  #panel h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #8ab; }
+  .row { display: grid; grid-template-columns: 90px 1fr auto; gap: 6px; align-items: center; margin: 6px 0; }
+  .row select, .row input[type=range] { width: 100%; box-sizing: border-box; }
+  .row .val { min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; color: #aaa; }
+  .row button.reset { padding: 2px 6px; font-size: 12px; }
+  .msg { min-height: 18px; font-size: 12px; color: #aaa; margin-top: 6px; }
+  .msg.err { color: #e77; }
+  .meter { height: 8px; background: #2a2a2a; border-radius: 3px; overflow: hidden; }
+  .meter div { height: 100%; width: 0; background: linear-gradient(90deg, #3a3 70%, #cc3 85%, #c33); transition: width 60ms linear; }
+  .hint { font-size: 12px; color: #888; margin: 4px 0; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="audioBtn">Audio</button>
+  <button id="muteBtn" title="Mute">🔊</button>
+  <input id="vol" type="range" min="0" max="3" step="0.05" value="1" title="Volume">
+  <button id="recBtn" title="Record video and audio to a file on the server">Record</button>
+  <button id="setBtn">⚙ Settings</button>
+  <button id="sizeBtn">1:1</button>
+  <button id="fsBtn">Fullscreen</button>
+  <button id="snapBtn" title="Save a snapshot to the snapshots folder on the server">Snapshot</button>
+  <span id="stats">connecting…</span>
+</div>
+<div id="main">
+  <div id="wrap"><img id="video" alt="HDMI capture"></div>
+  <div id="panel" hidden>
+    <h3>Video</h3>
+    <div class="row"><label for="fmt">Format</label><select id="fmt"></select><span></span></div>
+    <div class="row"><label for="res">Resolution</label><select id="res"></select><span></span></div>
+    <div class="row"><label for="rate">Frame rate</label><select id="rate"></select><span></span></div>
+    <div class="row" id="qualRow"><label for="qual">JPEG quality</label><input id="qual" type="range" min="10" max="100" step="5"><span class="val" id="qualVal"></span></div>
+    <div class="hint" id="fmtHint"></div>
+    <button id="applyVideo">Apply</button>
+    <div class="msg" id="videoMsg"></div>
+
+    <h3>Picture</h3>
+    <div id="controls"></div>
+    <button id="resetAll">Reset all to device defaults</button>
+    <div class="msg" id="ctrlMsg"></div>
+
+    <h3>Audio</h3>
+    <div class="row"><label for="chan">Channels</label>
+      <select id="chan">
+        <option value="stereo">Stereo</option>
+        <option value="swap">Swap L/R</option>
+        <option value="mono">Mono (mix)</option>
+        <option value="left">Left only</option>
+        <option value="right">Right only</option>
+      </select><span></span></div>
+    <div class="row"><label for="lat">Latency</label>
+      <select id="lat">
+        <option value="low">Low (~50 ms)</option>
+        <option value="normal">Normal (~100 ms)</option>
+        <option value="high">Smooth (~250 ms)</option>
+      </select><span></span></div>
+    <div class="row"><label for="vol2">Volume</label><input id="vol2" type="range" min="0" max="3" step="0.05"><span class="val" id="volVal"></span></div>
+    <div class="row"><span>Level L</span><div class="meter"><div id="meterL"></div></div><span></span></div>
+    <div class="row"><span>Level R</span><div class="meter"><div id="meterR"></div></div><span></span></div>
+    <div class="hint">Audio format is fixed by the firmware: 48 kHz stereo 16-bit. Audio settings are stored in this browser.</div>
+
+    <h3>Recording</h3>
+    <div class="row"><label for="recFmt">Format</label><select id="recFmt"></select><span></span></div>
+    <div class="row" id="recQualRow"><label for="recQual">Quality</label>
+      <select id="recQual">
+        <option value="high">High (larger)</option>
+        <option value="normal" selected>Normal</option>
+        <option value="small">Small</option>
+      </select><span></span></div>
+    <div class="hint" id="recHint"></div>
+    <div class="msg" id="recMsg"></div>
+    <ul id="recList"></ul>
+
+    <h3>Snapshots</h3>
+    <ul id="snapList"></ul>
+
+    <h3>Folders</h3>
+    <div class="hint">Folders on the server running hdmiview. Absolute paths; ~ means your home folder. Missing folders are created.</div>
+    <div class="flabel">Recordings</div>
+    <div class="folder"><input id="recDir" spellcheck="false"><button id="recDirSave">Save</button></div>
+    <div class="flabel">Snapshots</div>
+    <div class="folder"><input id="snapDir" spellcheck="false"><button id="snapDirSave">Save</button></div>
+    <div class="msg" id="dirMsg"></div>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const api = async (url, body) => {
+  const res = await fetch(url, body === undefined ? { cache: "no-store" } :
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
+  return res.json();
+};
+
+// ---------------- video stream ----------------
+const img = $("video");
+function connectVideo() { img.src = "/video?t=" + Date.now(); }
+img.onerror = () => setTimeout(connectVideo, 1000);
+connectVideo();
+
+$("fsBtn").onclick = () => document.fullscreenElement ? document.exitFullscreen() : $("wrap").requestFullscreen();
+img.ondblclick = $("fsBtn").onclick;
+$("sizeBtn").onclick = () => {
+  const native = $("wrap").classList.toggle("native");
+  $("sizeBtn").textContent = native ? "Fit" : "1:1";
+};
+$("setBtn").onclick = () => {
+  const p = $("panel"); p.hidden = !p.hidden;
+  $("setBtn").classList.toggle("on", !p.hidden);
+  if (!p.hidden) { loadVideo(); loadControls(); loadSnapshots(); loadFolders(); }
+};
+
+// ---------------- video settings ----------------
+let modes = [];
+const fpsName = f => f + " fps";
+const sizeKey = m => m.width + "x" + m.height;
+const fmtName = { MJPG: "MJPEG (compressed)", YUYV: "YUYV (uncompressed)" };
+
+function fillSelect(sel, items, current) {
+  sel.innerHTML = "";
+  for (const [value, label] of items) sel.add(new Option(label, value, false, String(value) === String(current)));
+  if (sel.selectedIndex < 0) sel.selectedIndex = 0;
+}
+
+function refreshVideoForm(cur) {
+  const fmts = [...new Set(modes.map(m => m.format))];
+  fillSelect($("fmt"), fmts.map(f => [f, fmtName[f] || f]), cur.format ?? $("fmt").value);
+  const sizes = modes.filter(m => m.format === $("fmt").value);
+  fillSelect($("res"), sizes.map(m => [sizeKey(m), sizeKey(m)]), cur.size ?? $("res").value);
+  const m = sizes.find(m => sizeKey(m) === $("res").value);
+  const rates = [...(m?.fps || [])].sort((a, b) => b - a);
+  fillSelect($("rate"), rates.map(f => [f, fpsName(f)]), cur.fps ?? $("rate").value);
+  const yuyv = $("fmt").value === "YUYV";
+  $("qualRow").style.display = yuyv ? "" : "none";
+  $("fmtHint").textContent = yuyv
+    ? "Uncompressed: sharpest picture, low frame rate (USB 2.0 bandwidth). Server re-encodes to JPEG."
+    : "Compressed by the capture chip: full frame rate, minor JPEG artefacts.";
+}
+
+async function loadVideo() {
+  try {
+    const v = await api("/api/video");
+    modes = v.modes;
+    $("qual").value = v.mode.quality || 90; $("qualVal").textContent = $("qual").value;
+    refreshVideoForm({ format: v.mode.format, size: v.mode.width + "x" + v.mode.height, fps: v.mode.fps });
+    setMsg("videoMsg", "Device " + v.device);
+  } catch (e) { setMsg("videoMsg", e.message, true); }
+}
+$("fmt").onchange = () => refreshVideoForm({ size: $("res").value, fps: $("rate").value });
+$("res").onchange = () => refreshVideoForm({ fps: $("rate").value });
+$("qual").oninput = () => $("qualVal").textContent = $("qual").value;
+$("applyVideo").onclick = async () => {
+  const [w, h] = $("res").value.split("x").map(Number);
+  const body = { format: $("fmt").value, width: w, height: h, fps: +$("rate").value, quality: +$("qual").value };
+  $("applyVideo").disabled = true;
+  try { const m = await api("/api/video", body); setMsg("videoMsg", `Switched to ${m.format} ${m.width}x${m.height} @ ${m.fps} fps`); }
+  catch (e) { setMsg("videoMsg", e.message, true); }
+  $("applyVideo").disabled = false;
+};
+
+function setMsg(id, text, err) { $(id).textContent = text; $(id).classList.toggle("err", !!err); }
+
+// ---------------- picture controls ----------------
+const pretty = s => s.replace(/,.*$/, "").replace(/\b\w/g, c => c.toUpperCase());
+let ctrlTimers = {};
+
+async function sendControl(c, payload, inputs) {
+  try {
+    const r = await api("/api/controls", { id: c.id, ...payload });
+    inputs.set(r.value);
+    setMsg("ctrlMsg", "");
+  } catch (e) { setMsg("ctrlMsg", e.message, true); }
+}
+
+function renderControl(c) {
+  const row = document.createElement("div"); row.className = "row";
+  const label = document.createElement("label"); label.textContent = pretty(c.name);
+  const val = document.createElement("span"); val.className = "val";
+  let input, inputs;
+  if (c.type === "menu") {
+    input = document.createElement("select");
+    for (const [k, v] of Object.entries(c.menu)) input.add(new Option(v, k));
+    inputs = { set: v => input.value = v, get: () => +input.value };
+  } else if (c.type === "bool") {
+    input = document.createElement("input"); input.type = "checkbox";
+    inputs = { set: v => input.checked = !!v, get: () => input.checked ? 1 : 0 };
+  } else {
+    input = document.createElement("input"); input.type = "range";
+    input.min = c.min; input.max = c.max; input.step = c.step || 1;
+    inputs = { set: v => { input.value = v; val.textContent = v; }, get: () => +input.value };
+  }
+  input.disabled = c.readOnly;
+  inputs.set(c.value);
+  const reset = document.createElement("button"); reset.className = "reset"; reset.textContent = "↺";
+  reset.title = "Reset to default (" + c.default + ")";
+  reset.onclick = () => sendControl(c, { reset: true }, inputs);
+  input.oninput = () => {
+    if (c.type === "int") val.textContent = input.value;
+    clearTimeout(ctrlTimers[c.id]);
+    ctrlTimers[c.id] = setTimeout(() => sendControl(c, { value: inputs.get() }, inputs), 60);
+  };
+  const right = document.createElement("span");
+  right.append(c.type === "int" ? val : "", reset);
+  row.append(label, input, right);
+  return { row, reset };
+}
+
+let ctrlResets = [];
+async function loadControls() {
+  try {
+    const ctrls = await api("/api/controls");
+    $("controls").innerHTML = ""; ctrlResets = [];
+    for (const c of ctrls) { const r = renderControl(c); $("controls").append(r.row); ctrlResets.push(r.reset); }
+    if (!ctrls.length) setMsg("ctrlMsg", "Device has no adjustable controls");
+  } catch (e) { setMsg("ctrlMsg", e.message, true); }
+}
+$("resetAll").onclick = () => ctrlResets.forEach(b => b.click());
+
+// ---------------- audio ----------------
+const RATE = 48000, CH = 2, RING = RATE * 2;
+const LATENCY = { // start playing / max buffered / trim back to (seconds)
+  low:    [0.03, 0.12, 0.05],
+  normal: [0.06, 0.25, 0.08],
+  high:   [0.15, 0.50, 0.20],
+};
+const prefs = Object.assign({ enabled: true, volume: 1, muted: false, channels: "stereo", latency: "normal" },
+  JSON.parse(localStorage.getItem("hdmiview.audio") || "{}"));
+const savePrefs = () => localStorage.setItem("hdmiview.audio", JSON.stringify(prefs));
+
+let ctx = null, proc = null, gain = null, abort = null;
+const ring = [new Float32Array(RING), new Float32Array(RING)];
+let wr = 0, rd = 0, playing = false;
+let peak = [0, 0];
+
+const lat = () => LATENCY[prefs.latency] || LATENCY.normal;
+
+function pushPCM(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const frames = bytes.byteLength / (2 * CH);
+  for (let i = 0; i < frames; i++) {
+    const p = (wr + i) % RING;
+    ring[0][p] = dv.getInt16(i * 4, true) / 32768;
+    ring[1][p] = dv.getInt16(i * 4 + 2, true) / 32768;
+  }
+  wr += frames;
+  const [, max, trim] = lat();
+  if (wr - rd > max * RATE) rd = wr - Math.floor(trim * RATE);   // fell behind: stay live
+}
+
+async function readAudio(signal) {
+  const res = await fetch("/audio", { cache: "no-store", signal });
+  if (!res.ok) throw new Error("audio HTTP " + res.status);
+  const reader = res.body.getReader();
+  let carry = new Uint8Array(0);
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) throw new Error("audio stream ended");
+    let data = value;
+    if (carry.length) { data = new Uint8Array(carry.length + value.length); data.set(carry); data.set(value, carry.length); }
+    const usable = data.length - (data.length % (2 * CH));
+    pushPCM(data.subarray(0, usable));
+    carry = data.slice(usable);
+  }
+}
+
+function applyGain() { if (gain) gain.gain.value = prefs.muted ? 0 : prefs.volume; }
+
+function startAudio() {
+  try { ctx = new AudioContext({ sampleRate: RATE, latencyHint: "interactive" }); }
+  catch { ctx = new AudioContext({ latencyHint: "interactive" }); }
+  const step = RATE / ctx.sampleRate;      // resample if the browser forced another rate
+  let pos = 0;
+  proc = ctx.createScriptProcessor(1024, 0, 2);
+  proc.onaudioprocess = e => {
+    const L = e.outputBuffer.getChannelData(0), R = e.outputBuffer.getChannelData(1);
+    if (!playing && wr - rd >= lat()[0] * RATE) playing = true;
+    const mode = prefs.channels;
+    let pl = 0, pr = 0;
+    for (let i = 0; i < L.length; i++) {
+      if (!playing || wr - rd < 2) { L[i] = R[i] = 0; playing = false; continue; }
+      const p = rd % RING;
+      let l = ring[0][p], r = ring[1][p];
+      pl = Math.max(pl, Math.abs(l)); pr = Math.max(pr, Math.abs(r));   // meters show the source
+      switch (mode) {
+        case "swap": [l, r] = [r, l]; break;
+        case "mono": l = r = (l + r) / 2; break;
+        case "left": r = l; break;
+        case "right": l = r; break;
+      }
+      L[i] = l; R[i] = r;
+      pos += step;
+      const adv = Math.floor(pos); pos -= adv; rd += adv;
+    }
+    peak = [Math.max(pl, peak[0] * 0.85), Math.max(pr, peak[1] * 0.85)];
+  };
+  gain = ctx.createGain();
+  applyGain();
+  proc.connect(gain).connect(ctx.destination);
+
+  wr = rd = 0; playing = false;
+  abort = new AbortController();
+  (async signal => {
+    while (!signal.aborted) {
+      try { await readAudio(signal); } catch (e) { if (signal.aborted) return; console.warn(e); }
+      await new Promise(r => setTimeout(r, 1000));
+      wr = rd = 0; playing = false;
+    }
+  })(abort.signal);
+  ctx.onstatechange = updateAudioBtn;
+  if (ctx.state === "suspended") {
+    // Autoplay policy: the browser waits for a user gesture. Resume on the
+    // first click or key press anywhere on the page.
+    const resume = () => {
+      document.removeEventListener("pointerdown", resume, true);
+      document.removeEventListener("keydown", resume, true);
+      ctx?.resume();
+    };
+    document.addEventListener("pointerdown", resume, true);
+    document.addEventListener("keydown", resume, true);
+  }
+  updateAudioBtn();
+}
+
+function updateAudioBtn() {
+  const b = $("audioBtn");
+  const waiting = ctx && ctx.state === "suspended";
+  b.textContent = !ctx ? "Audio off" : waiting ? "Click anywhere for audio" : "Audio on";
+  b.classList.toggle("on", !!ctx && !waiting);
+  b.title = waiting ? "The browser blocks sound until you interact with the page. Allow sound for this site to skip this." : "Turn audio on/off";
+}
+
+function stopAudio() {
+  abort?.abort(); proc?.disconnect(); ctx?.close();
+  ctx = proc = gain = abort = null; peak = [0, 0];
+  updateAudioBtn();
+}
+
+function syncAudioUI() {
+  $("vol").value = $("vol2").value = prefs.volume;
+  $("volVal").textContent = Math.round(prefs.volume * 100) + "%";
+  $("muteBtn").textContent = prefs.muted ? "🔇" : "🔊";
+  $("muteBtn").classList.toggle("on", prefs.muted);
+  $("chan").value = prefs.channels;
+  $("lat").value = prefs.latency;
+}
+function setVolume(v) { prefs.volume = +v; prefs.muted = false; applyGain(); syncAudioUI(); savePrefs(); }
+
+$("audioBtn").onclick = () => {
+  if (ctx && ctx.state === "suspended") return;   // this click resumes it (see startAudio)
+  prefs.enabled = !ctx; savePrefs();
+  prefs.enabled ? startAudio() : stopAudio();
+};
+$("vol").oninput = () => setVolume($("vol").value);
+$("vol2").oninput = () => setVolume($("vol2").value);
+$("muteBtn").onclick = () => { prefs.muted = !prefs.muted; applyGain(); syncAudioUI(); savePrefs(); };
+$("chan").onchange = () => { prefs.channels = $("chan").value; savePrefs(); };
+$("lat").onchange = () => { prefs.latency = $("lat").value; savePrefs(); if (ctx) rd = Math.max(rd, wr - Math.floor(lat()[2] * RATE)); };
+syncAudioUI();
+if (prefs.enabled) startAudio(); else updateAudioBtn();
+
+(function meters() {
+  if (!$("panel").hidden) {
+    $("meterL").style.width = Math.min(100, peak[0] * 100) + "%";
+    $("meterR").style.width = Math.min(100, peak[1] * 100) + "%";
+  }
+  requestAnimationFrame(meters);
+})();
+
+// ---------------- recording ----------------
+const recPrefs = Object.assign({ format: "mp4", quality: "normal" }, JSON.parse(localStorage.getItem("hdmiview.rec") || "{}"));
+const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
+const fmtTime = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(v => String(v).padStart(2, "0")).join(":");
+let recState = null;
+
+function renderRec(st) {
+  recState = st;
+  const btn = $("recBtn");
+  btn.disabled = !st.available;
+  btn.classList.toggle("rec", st.active);
+  btn.textContent = st.active ? `Stop ${fmtTime(st.seconds || 0)} · ${fmtBytes(st.bytes || 0)}` : "Record";
+  btn.title = st.available ? "Record video and audio to a file on the server" : "ffmpeg not found on the server";
+
+  if ($("recFmt").options.length === 0 && st.formats) {
+    for (const k of ["mp4", "mkv"]) if (st.formats[k]) $("recFmt").add(new Option(st.formats[k], k));
+    $("recFmt").value = recPrefs.format; $("recQual").value = recPrefs.quality;
+    recFormUI();
+  }
+  $("recFmt").disabled = $("recQual").disabled = st.active;
+  if (st.error) setMsg("recMsg", st.error, true);
+  else if (st.active && !st.frames && st.seconds >= 3) setMsg("recMsg", "Recording, but waiting for video: is the capture device in use by another program?", true);
+  else setMsg("recMsg", st.active ? `Recording ${st.file} — continues if you close this page.` : `Saved to ${st.dir} on the server.`);
+
+  if (st.recordings) {
+    $("recList").innerHTML = "";
+    for (const r of st.recordings) {
+      const li = document.createElement("li");
+      const live = st.active && r.name === st.file;
+      li.innerHTML = `<span class="n"></span><span class="s"></span>`;
+      li.querySelector(".n").textContent = r.name;
+      li.querySelector(".n").title = new Date(r.time).toLocaleString();
+      li.querySelector(".s").textContent = fmtBytes(r.bytes);
+      if (!live) {
+        const a = document.createElement("a"); a.href = "/recordings/" + encodeURIComponent(r.name) + "?download=1"; a.textContent = "Download";
+        const del = document.createElement("button"); del.textContent = "Delete";
+        del.onclick = async () => {
+          if (!confirm("Delete " + r.name + "?")) return;
+          const res = await fetch("/recordings/" + encodeURIComponent(r.name), { method: "DELETE" });
+          if (!res.ok) setMsg("recMsg", await res.text(), true);
+          pollRec(true);
+        };
+        li.append(a, del);
+      }
+      $("recList").append(li);
+    }
+    if (!st.recordings.length) $("recList").innerHTML = '<li><span class="n" style="color:#777">No recordings yet</span></li>';
+  }
+}
+
+function recFormUI() {
+  const mp4 = $("recFmt").value === "mp4";
+  $("recQualRow").style.display = mp4 ? "" : "none";
+  $("recHint").textContent = mp4
+    ? "H.264 + AAC, encoded on the server CPU. Roughly 0.5–2 GB per hour for console content."
+    : "Stores the capture chip's MJPEG frames untouched with lossless audio. Almost no CPU, ~9 GB per hour at 1080p30.";
+}
+$("recFmt").onchange = () => { recPrefs.format = $("recFmt").value; localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs)); recFormUI(); };
+$("recQual").onchange = () => { recPrefs.quality = $("recQual").value; localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs)); };
+
+async function pollRec() {
+  try { renderRec(await api("/api/record")); } catch (e) { setMsg("recMsg", e.message, true); }
+}
+
+$("recBtn").onclick = async () => {
+  $("recBtn").disabled = true;
+  try {
+    const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality };
+    await api("/api/record", body);
+  } catch (e) { alert("Recording: " + e.message); }
+  await pollRec();
+};
+pollRec();
+setInterval(() => { if (recState?.active || !$("panel").hidden) pollRec(); }, 1000);
+
+// ---------------- snapshots ----------------
+let toastTimer;
+function toast(html, err) {
+  const t = $("toast");
+  t.innerHTML = html; t.classList.toggle("err", !!err); t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 4000);
+}
+const esc = s => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+$("snapBtn").onclick = async () => {
+  $("snapBtn").disabled = true;
+  try {
+    const r = await api("/api/snapshot", {});
+    const url = "/snapshots/" + encodeURIComponent(r.name);
+    toast(`Saved <a href="${url}" target="_blank">${esc(r.name)}</a> to ${esc(r.dir)}`);
+    if (!$("panel").hidden) loadSnapshots();
+  } catch (e) { toast("Snapshot failed: " + esc(e.message), true); }
+  $("snapBtn").disabled = false;
+};
+
+async function loadSnapshots() {
+  try {
+    const r = await api("/api/snapshots");
+    const list = $("snapList"); list.innerHTML = "";
+    for (const f of r.snapshots.slice(0, 50)) {
+      const url = "/snapshots/" + encodeURIComponent(f.name);
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="n"></span><span class="s"></span><a target="_blank">Open</a><a>Download</a><button>Delete</button>`;
+      li.querySelector(".n").textContent = f.name;
+      li.querySelector(".n").title = new Date(f.time).toLocaleString();
+      li.querySelector(".s").textContent = fmtBytes(f.bytes);
+      const [open, dl] = li.querySelectorAll("a");
+      open.href = url; dl.href = url + "?download=1";
+      li.querySelector("button").onclick = async () => {
+        if (!confirm("Delete " + f.name + "?")) return;
+        const res = await fetch(url, { method: "DELETE" });
+        if (!res.ok) toast(esc(await res.text()), true);
+        loadSnapshots();
+      };
+      list.append(li);
+    }
+    if (!r.snapshots.length) list.innerHTML = '<li><span class="n" style="color:#777">No snapshots yet</span></li>';
+    else if (r.snapshots.length > 50) list.insertAdjacentHTML("beforeend", `<li><span class="n" style="color:#777">…and ${r.snapshots.length - 50} more in ${esc(r.dir)}</span></li>`);
+  } catch (e) { toast(esc(e.message), true); }
+}
+
+// ---------------- folders ----------------
+async function loadFolders() {
+  try {
+    const f = await api("/api/folders");
+    if (document.activeElement !== $("recDir")) $("recDir").value = f.recordings;
+    if (document.activeElement !== $("snapDir")) $("snapDir").value = f.snapshots;
+  } catch (e) { setMsg("dirMsg", e.message, true); }
+}
+async function saveFolder(key, input) {
+  try {
+    const f = await api("/api/folders", { [key]: input.value });
+    $("recDir").value = f.recordings; $("snapDir").value = f.snapshots;
+    setMsg("dirMsg", `${key === "recordings" ? "Recordings" : "Snapshots"} will be saved to ${f[key]}`);
+    if (key === "recordings") pollRec(); else loadSnapshots();
+  } catch (e) { setMsg("dirMsg", e.message, true); }
+}
+$("recDirSave").onclick = () => saveFolder("recordings", $("recDir"));
+$("snapDirSave").onclick = () => saveFolder("snapshots", $("snapDir"));
+$("recDir").onkeydown = e => { if (e.key === "Enter") $("recDirSave").click(); };
+$("snapDir").onkeydown = e => { if (e.key === "Enter") $("snapDirSave").click(); };
+
+// ---------------- stats ----------------
+setInterval(async () => {
+  try {
+    const s = await api("/stats");
+    if (s.recording !== !!recState?.active) pollRec();
+    const m = s.mode;
+    const buf = ctx ? ` · audio buffer ${Math.round((wr - rd) / RATE * 1000)} ms` : "";
+    $("stats").textContent = `${m.format} ${m.width}x${m.height} · ${s.fps} fps · ${(s.kbps / 1000).toFixed(1)} Mbit/s · audio ${s.audio ? "live" : "off"}${buf} · viewers ${s.videoClients}`;
+  } catch { $("stats").textContent = "server unreachable"; }
+}, 1000);
+</script>
+</body>
+</html>

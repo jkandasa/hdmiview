@@ -1,0 +1,8 @@
+# build output
+/bin/
+
+# Device dumps and firmware images: they contain (or are built from) the
+# vendor's EEPROM firmware, so they stay local.
+/backups/
+/firmware/
+*.bin

@@ -1,0 +1,2 @@
+# MacroSilicon MS2109 USB HDMI capture: allow logged-in user access to its hidraw node
+KERNEL=="hidraw*", ATTRS{idVendor}=="534d", ATTRS{idProduct}=="2109", MODE="0660", TAG+="uaccess"

@@ -1,0 +1,82 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/exec"
+	"strings"
+	"sync/atomic"
+)
+
+const (
+	audioRate     = 48000
+	audioChannels = 2
+	// 10 ms of S16_LE stereo per chunk
+	audioChunk = audioRate / 100 * audioChannels * 2
+)
+
+// findAudioCard returns the ALSA id of the first card whose /proc/asound/cards
+// entry contains match.
+func findAudioCard(match string) (string, error) {
+	f, err := os.Open("/proc/asound/cards")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		// " 2 [MS2109         ]: USB-Audio - MS2109"
+		if !strings.Contains(line, match) {
+			continue
+		}
+		if i, j := strings.Index(line, "["), strings.Index(line, "]"); i >= 0 && j > i {
+			return "hw:CARD=" + strings.TrimSpace(line[i+1:j]) + ",DEV=0", nil
+		}
+	}
+	return "", fmt.Errorf("no ALSA card matching %q", match)
+}
+
+// runAudioUntil streams raw PCM from arecord into hub until stop closes
+// (returns nil) or arecord fails.
+func runAudioUntil(device string, hub *hub, stop <-chan struct{}) error {
+	cmd := exec.Command("arecord", "-q", "-D", device, "-f", "S16_LE",
+		"-c", fmt.Sprint(audioChannels), "-r", fmt.Sprint(audioRate),
+		"-t", "raw", "--buffer-time=100000", "--period-time=10000")
+	cmd.Stderr = os.Stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	slog.Info("audio capture started", "device", device, "format", "S16_LE", "rate", audioRate, "channels", audioChannels)
+
+	var killed atomic.Bool
+	exited := make(chan struct{})
+	go func() {
+		select {
+		case <-stop:
+			killed.Store(true)
+			cmd.Process.Kill()
+		case <-exited:
+		}
+	}()
+	for {
+		buf := make([]byte, audioChunk)
+		if _, err := io.ReadFull(out, buf); err != nil {
+			close(exited)
+			cmd.Process.Kill()
+			cmd.Wait()
+			if killed.Load() {
+				return nil
+			}
+			return fmt.Errorf("arecord: %w", err)
+		}
+		hub.publish(buf)
+	}
+}
