@@ -11,7 +11,9 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -127,6 +129,36 @@ func runWhileWatched(name string, h *hub, run func(stop <-chan struct{}) error) 
 			slog.Info("no viewers, device released", "source", name)
 		}
 	}
+}
+
+// guard protects state-changing requests from other web sites: a page in
+// the user's browser could otherwise POST to the localhost server.
+// Requests must come from this origin and POSTs must be JSON, which a
+// cross-site page cannot send without a CORS preflight (never granted).
+func guard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+				http.Error(w, "cross-site request refused", http.StatusForbidden)
+				return
+			}
+			if origin := r.Header.Get("Origin"); origin != "" {
+				u, err := url.Parse(origin)
+				if err != nil || u.Host != r.Host {
+					http.Error(w, "cross-origin request refused", http.StatusForbidden)
+					return
+				}
+			}
+			if r.Method == http.MethodPost {
+				if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt != "application/json" {
+					http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+					return
+				}
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
@@ -628,8 +660,13 @@ func main() {
 		os.Exit(0)
 	}()
 
-	slog.Info("hdmiview listening", "version", cli.VersionString("hdmiview"), "url", "http://"+*listen+"/", "recordings", recStore.Dir(), "snapshots", snapStore.Dir())
-	if err := http.ListenAndServe(*listen, nil); err != nil {
+	slog.Info("hdmiview listening", "version", cli.ShortVersion(), "url", "http://"+*listen+"/", "recordings", recStore.Dir(), "snapshots", snapStore.Dir())
+	srv := &http.Server{
+		Addr:              *listen,
+		Handler:           guard(http.DefaultServeMux),
+		ReadHeaderTimeout: 10 * time.Second, // no write timeout: /video and /audio stream forever
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		fatal("http server stopped", "error", err)
 	}
 }

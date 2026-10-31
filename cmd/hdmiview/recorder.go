@@ -273,13 +273,20 @@ func (r *recorder) stopRecording() error {
 		return errors.New("not recording")
 	}
 	close(rec.stop)
-	rec.wg.Wait() // feeders closed the pipes: ffmpeg sees EOF and finalizes
+	// The feeders close the pipes, ffmpeg sees EOF and finalizes the file.
+	// If ffmpeg hangs, a feeder can block in Write: killing ffmpeg after a
+	// timeout breaks the pipe and lets everything finish.
+	fed := make(chan struct{})
+	go func() { rec.wg.Wait(); close(fed) }()
+	deadline := time.After(30 * time.Second)
 	select {
 	case <-rec.exited:
-	case <-time.After(15 * time.Second):
+	case <-deadline:
+		slog.Warn("ffmpeg did not finish, killing it", "file", rec.path)
 		rec.cmd.Process.Kill()
 		<-rec.exited
 	}
+	<-fed
 	ffErr := strings.TrimSpace(rec.stderr.String())
 	if ffErr != "" {
 		slog.Warn("ffmpeg reported errors", "file", rec.path, "stderr", ffErr)
