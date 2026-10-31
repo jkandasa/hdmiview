@@ -61,14 +61,20 @@ func TestRecorderSync(t *testing.T) {
 	}
 	black, white := solidJPEG(t, 0), solidJPEG(t, 255)
 
-	for _, format := range []string{"mp4", "mkv"} {
-		t.Run(format, func(t *testing.T) {
+	for _, c := range []struct {
+		format, inputs string
+	}{{"mp4", "pipes"}, {"mkv", "pipes"}, {"mp4", "stdin+tcp"}, {"mkv", "stdin+tcp"}} {
+		format := c.format
+		t.Run(c.format+"/"+c.inputs, func(t *testing.T) {
 			dir := t.TempDir()
 			if keep := os.Getenv("HDMIVIEW_KEEP"); keep != "" {
 				dir = keep
 			}
 			video, audio := newHub(1), newHub(50)
 			rec := newRecorder(newFileStore(dir, ".mp4", ".mkv"), video, audio)
+			if c.inputs == "stdin+tcp" { // the Windows input path
+				rec.inputs = newStdinTCPInputs
+			}
 			name, err := rec.start(format, "normal", 30)
 			if err != nil {
 				t.Fatal(err)

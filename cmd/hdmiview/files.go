@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -114,8 +115,13 @@ func prepareDir(p string) (string, error) {
 	return p, nil
 }
 
-func defaultRecordingsDir() string { return homeSubdir("Videos", "hdmiview") }
-func defaultSnapshotsDir() string  { return homeSubdir("Pictures", "hdmiview") }
+func defaultRecordingsDir() string {
+	if runtime.GOOS == "darwin" {
+		return homeSubdir("Movies", "hdmiview")
+	}
+	return homeSubdir("Videos", "hdmiview")
+}
+func defaultSnapshotsDir() string { return homeSubdir("Pictures", "hdmiview") }
 
 func homeSubdir(parts ...string) string {
 	home, err := os.UserHomeDir()

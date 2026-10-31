@@ -192,7 +192,7 @@ $("setBtn").onclick = () => {
 let modes = [];
 const fpsName = f => f + " fps";
 const sizeKey = m => m.width + "x" + m.height;
-const fmtName = { MJPG: "MJPEG (compressed)", YUYV: "YUYV (uncompressed)" };
+const fmtName = { MJPG: "MJPEG (compressed)", YUYV: "YUYV (uncompressed)", RAW: "Raw (encoded on server)" };
 
 function fillSelect(sel, items, current) {
   sel.innerHTML = "";
@@ -208,11 +208,13 @@ function refreshVideoForm(cur) {
   const m = sizes.find(m => sizeKey(m) === $("res").value);
   const rates = [...(m?.fps || [])].sort((a, b) => b - a);
   fillSelect($("rate"), rates.map(f => [f, fpsName(f)]), cur.fps ?? $("rate").value);
-  const yuyv = $("fmt").value === "YUYV";
-  $("qualRow").style.display = yuyv ? "" : "none";
-  $("fmtHint").textContent = yuyv
-    ? "Uncompressed: sharpest picture, low frame rate (USB 2.0 bandwidth). Server re-encodes to JPEG."
-    : "Compressed by the capture chip: full frame rate, minor JPEG artefacts.";
+  const f = $("fmt").value;
+  $("qualRow").style.display = f === "MJPG" ? "none" : "";
+  $("fmtHint").textContent = {
+    MJPG: "Compressed by the capture chip: full frame rate, minor JPEG artefacts.",
+    YUYV: "Uncompressed: sharpest picture, low frame rate (USB 2.0 bandwidth). Server re-encodes to JPEG.",
+    RAW: "Frames decoded by the operating system and re-encoded to JPEG on the server.",
+  }[f] || "";
 }
 
 async function loadVideo() {

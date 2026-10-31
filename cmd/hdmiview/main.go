@@ -170,8 +170,8 @@ func writeJSON(w http.ResponseWriter, v any) {
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address (use 0.0.0.0:8080 for LAN access)")
 	match := flag.String("match", "MS2109", "device name to look for")
-	videoDev := flag.String("video", "", "V4L2 device (default: auto-detect)")
-	audioDev := flag.String("audio", "", "ALSA device (default: auto-detect, \"none\" to disable)")
+	videoDev := flag.String("video", "", "video device: V4L2 path on Linux, device name on Windows/macOS (default: auto-detect)")
+	audioDev := flag.String("audio", "", "audio device: ALSA name on Linux, device name on Windows/macOS (default: auto-detect, \"none\" to disable)")
 	format := flag.String("format", "MJPG", "initial video format: MJPG or YUYV")
 	width := flag.Int("width", 1920, "initial capture width")
 	height := flag.Int("height", 1080, "initial capture height")
@@ -230,12 +230,11 @@ func main() {
 	recStore := newFileStore(dirs.Recordings, ".mp4", ".mkv")
 	snapStore := newFileStore(dirs.Snapshots, ".jpg")
 
-	devicePath := func() (string, error) {
-		if *videoDev != "" {
-			return *videoDev, nil
-		}
-		return findVideoDevice(*match)
+	be, err := newBackend(*videoDev, *audioDev, *match)
+	if err != nil {
+		fatal("capture backend", "error", err)
 	}
+	devicePath := be.videoDevice
 
 	video := newHub(1)
 	audio := newHub(50) // 0.5 s of 10 ms chunks
@@ -251,13 +250,13 @@ func main() {
 			return err
 		}
 		mode, changed := st.get()
-		if modes, err := listModes(dev); err == nil {
+		if modes, err := be.listModes(dev); err == nil {
 			if fit := fitMode(mode, modes); fit != mode {
 				slog.Warn("video mode not supported, using closest", "requested", mode, "using", fit)
 				mode = fit
 			}
 		}
-		v, err := openVideo(dev, mode)
+		v, err := be.openVideo(dev, mode)
 		if err != nil {
 			return err
 		}
@@ -282,14 +281,11 @@ func main() {
 
 	if *audioDev != "none" {
 		go runWhileWatched("audio", audio, func(stop <-chan struct{}) error {
-			dev := *audioDev
-			if dev == "" {
-				var err error
-				if dev, err = findAudioCard(*match); err != nil {
-					return err
-				}
+			dev, err := be.audioDevice()
+			if err != nil {
+				return err
 			}
-			return runAudioUntil(dev, audio, stop)
+			return be.runAudio(dev, audio, stop)
 		})
 	}
 
@@ -445,7 +441,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		modes, err := listModes(dev)
+		modes, err := be.listModes(dev)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -468,7 +464,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		modes, err := listModes(dev)
+		modes, err := be.listModes(dev)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -494,7 +490,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		ctrls, err := listControls(dev)
+		ctrls, err := be.listControls(dev)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -517,7 +513,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-		ctrls, err := listControls(dev)
+		ctrls, err := be.listControls(dev)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
@@ -538,7 +534,7 @@ func main() {
 				http.Error(w, fmt.Sprintf("%s: value %d not allowed (%d..%d)", c.Name, value, c.Min, c.Max), http.StatusBadRequest)
 				return
 			}
-			got, err := setControl(dev, c.ID, value)
+			got, err := be.setControl(dev, c.ID, value)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return

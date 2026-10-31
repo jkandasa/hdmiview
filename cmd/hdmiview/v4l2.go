@@ -1,3 +1,5 @@
+//go:build linux
+
 package main
 
 import (
@@ -193,13 +195,6 @@ func findVideoDevice(match string) (string, error) {
 
 // ---------------------------------------------------------------- enumeration
 
-type videoModeInfo struct {
-	Format string `json:"format"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	FPS    []int  `json:"fps"`
-}
-
 // listModes enumerates the supported formats, discrete frame sizes and
 // frame rates. Only MJPEG and YUYV are reported (the formats we can serve).
 func listModes(path string) ([]videoModeInfo, error) {
@@ -243,19 +238,6 @@ func listModes(path string) ([]videoModeInfo, error) {
 }
 
 // ---------------------------------------------------------------- controls
-
-type videoControl struct {
-	ID       uint32         `json:"id"`
-	Name     string         `json:"name"`
-	Type     string         `json:"type"` // int, bool, menu
-	Min      int32          `json:"min"`
-	Max      int32          `json:"max"`
-	Step     int32          `json:"step"`
-	Default  int32          `json:"default"`
-	Value    int32          `json:"value"`
-	ReadOnly bool           `json:"readOnly"`
-	Menu     map[int]string `json:"menu,omitempty"`
-}
 
 func listControls(path string) ([]videoControl, error) {
 	fd, err := syscall.Open(path, syscall.O_RDWR, 0)
@@ -320,14 +302,6 @@ func setControl(path string, id uint32, value int32) (int32, error) {
 }
 
 // ---------------------------------------------------------------- capture
-
-type videoMode struct {
-	Format  string `json:"format"` // MJPG or YUYV
-	Width   int    `json:"width"`
-	Height  int    `json:"height"`
-	FPS     int    `json:"fps"`
-	Quality int    `json:"quality"` // JPEG quality for YUYV
-}
 
 type videoCapture struct {
 	fd      int

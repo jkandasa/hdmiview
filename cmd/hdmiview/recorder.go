@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -62,13 +63,25 @@ type recorder struct {
 	ffmpeg  string
 	video   *hub
 	audio   *hub // nil when audio is disabled
+	inputs  func(withAudio bool) (recInput, error)
 	active  *recording
 	lastErr string
 }
 
 func newRecorder(store *fileStore, video, audio *hub) *recorder {
 	ff, _ := exec.LookPath("ffmpeg")
-	return &recorder{store: store, ffmpeg: ff, video: video, audio: audio}
+	return &recorder{store: store, ffmpeg: ff, video: video, audio: audio, inputs: newRecInputs}
+}
+
+// recInput connects the recorder to ffmpeg's video and audio inputs.
+type recInput interface {
+	videoURL() string
+	audioURL() string
+	attach(cmd *exec.Cmd) error // before Start
+	started()                   // after Start
+	video() io.WriteCloser
+	audio() (io.WriteCloser, error) // may wait for ffmpeg to connect
+	abort()
 }
 
 type stamped struct {
@@ -120,26 +133,19 @@ func (r *recorder) start(format, quality string, fps int) (string, error) {
 	rec := &recording{name: name, path: filepath.Join(dir, name), format: format, quality: quality,
 		started: time.Now(), stop: make(chan struct{}), exited: make(chan struct{}), stderr: &tailBuffer{max: 4096}}
 
-	vr, vw, err := os.Pipe()
+	withAudio := r.audio != nil
+	in, err := r.inputs(withAudio)
 	if err != nil {
 		return "", err
 	}
-	files := []*os.File{vr}
 	if fps <= 0 {
 		fps = 30
 	}
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin",
-		"-thread_queue_size", "1024", "-f", "mjpeg", "-framerate", fmt.Sprint(fps), "-i", "pipe:3"}
-	var ar, aw *os.File
-	if r.audio != nil {
-		if ar, aw, err = os.Pipe(); err != nil {
-			vr.Close()
-			vw.Close()
-			return "", err
-		}
-		files = append(files, ar)
+		"-thread_queue_size", "1024", "-f", "mjpeg", "-framerate", fmt.Sprint(fps), "-i", in.videoURL()}
+	if withAudio {
 		args = append(args, "-thread_queue_size", "1024", "-f", "s16le",
-			"-ar", fmt.Sprint(audioRate), "-ac", fmt.Sprint(audioChannels), "-i", "pipe:4",
+			"-ar", fmt.Sprint(audioRate), "-ac", fmt.Sprint(audioChannels), "-i", in.audioURL(),
 			"-map", "0:v", "-map", "1:a")
 	}
 	args = append(args, "-fps_mode", "cfr")
@@ -147,26 +153,23 @@ func (r *recorder) start(format, quality string, fps int) (string, error) {
 	args = append(args, rec.path)
 
 	rec.cmd = exec.Command(r.ffmpeg, args...)
-	rec.cmd.ExtraFiles = files
 	rec.cmd.Stderr = rec.stderr
-	err = rec.cmd.Start()
-	vr.Close() // child holds its own copies
-	if ar != nil {
-		ar.Close()
-	}
-	if err != nil {
-		vw.Close()
-		if aw != nil {
-			aw.Close()
-		}
+	if err := in.attach(rec.cmd); err != nil {
+		in.abort()
 		return "", err
 	}
+	if err := rec.cmd.Start(); err != nil {
+		in.abort()
+		return "", err
+	}
+	in.started()
+	vw := in.video()
 
 	// Both feeders measure time from t0, the arrival of the first frame.
 	t0ch := make(chan time.Time, 1)
 	frames := stampedFeed(r.video, 60, rec.stop)
 	var chunks <-chan stamped
-	if aw != nil {
+	if withAudio {
 		chunks = stampedFeed(r.audio, 400, rec.stop)
 	}
 
@@ -200,10 +203,15 @@ func (r *recorder) start(format, quality string, fps int) (string, error) {
 		}
 	}()
 
-	if aw != nil {
+	if withAudio {
 		rec.wg.Add(1)
 		go func() { // audio: sample-count timeline aligned to t0
 			defer rec.wg.Done()
+			aw, err := in.audio()
+			if err != nil {
+				slog.Error("recording audio input", "error", err)
+				return
+			}
 			defer aw.Close()
 			var t0 time.Time
 			select {

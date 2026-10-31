@@ -17,13 +17,8 @@ package ms2109
 import (
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
-	"syscall"
-	"unsafe"
 )
 
 const (
@@ -43,63 +38,31 @@ const (
 	reportLen = 9
 )
 
-func ioc(dir, typ, nr, size uintptr) uintptr {
-	return dir<<30 | size<<16 | typ<<8 | nr
-}
-
-var (
-	hidiocSFeature = ioc(3, 'H', 0x06, reportLen)
-	hidiocGFeature = ioc(3, 'H', 0x07, reportLen)
-)
-
-// FindHidraw returns the /dev/hidrawN node of the first MS2109 found.
-func FindHidraw() (string, error) {
-	want := fmt.Sprintf("HID_ID=0003:%08X:%08X", VID, PID)
-	nodes, _ := filepath.Glob("/sys/class/hidraw/hidraw*")
-	for _, n := range nodes {
-		ue, err := os.ReadFile(filepath.Join(n, "device/uevent"))
-		if err != nil {
-			continue
-		}
-		if strings.Contains(strings.ToUpper(string(ue)), want) {
-			return "/dev/" + filepath.Base(n), nil
-		}
-	}
-	return "", errors.New("MS2109 (534d:2109) not found")
+// hidTransport moves raw feature reports. buf always holds the report id
+// (0) followed by 8 data bytes. Implemented per OS in hid_<os>.go.
+type hidTransport interface {
+	setFeature(buf []byte) error
+	getFeature(buf []byte) error
+	close() error
 }
 
 type Device struct {
-	f       *os.File
+	t       hidTransport
 	Path    string
 	Verbose bool
 }
 
+// Open opens the MS2109 HID interface. path selects a specific device
+// (OS specific, e.g. /dev/hidraw5 on Linux); "" finds the first MS2109.
 func Open(path string) (*Device, error) {
-	if path == "" {
-		var err error
-		if path, err = FindHidraw(); err != nil {
-			return nil, err
-		}
-	}
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	t, resolved, err := openTransport(path)
 	if err != nil {
-		if errors.Is(err, os.ErrPermission) {
-			return nil, fmt.Errorf("%w (install udev/70-ms2109.rules or run with sudo)", err)
-		}
 		return nil, err
 	}
-	return &Device{f: f, Path: path}, nil
+	return &Device{t: t, Path: resolved}, nil
 }
 
-func (d *Device) Close() error { return d.f.Close() }
-
-func (d *Device) ioctl(req uintptr, buf []byte) error {
-	_, _, e := syscall.Syscall(syscall.SYS_IOCTL, d.f.Fd(), req, uintptr(unsafe.Pointer(&buf[0])))
-	if e != 0 {
-		return e
-	}
-	return nil
-}
+func (d *Device) Close() error { return d.t.close() }
 
 // Exchange sends one feature report and reads the reply, checking that the
 // first checkLen bytes are echoed back.
@@ -108,10 +71,10 @@ func (d *Device) Exchange(out [reportLen]byte, checkLen int) ([reportLen]byte, e
 	if d.Verbose {
 		fmt.Fprintln(os.Stderr, "OUT", hex.EncodeToString(out[:]))
 	}
-	if err := d.ioctl(hidiocSFeature, out[:]); err != nil {
+	if err := d.t.setFeature(out[:]); err != nil {
 		return in, fmt.Errorf("set feature: %w", err)
 	}
-	if err := d.ioctl(hidiocGFeature, in[:]); err != nil {
+	if err := d.t.getFeature(in[:]); err != nil {
 		return in, fmt.Errorf("get feature: %w", err)
 	}
 	if d.Verbose {

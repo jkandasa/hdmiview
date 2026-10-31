@@ -7,14 +7,32 @@ Tools for cheap **MacroSilicon MS2109** USB HDMI capture dongles (USB ID `534d:2
 - **`ms2109tool`**: back up, inspect, patch and flash the dongle's EEPROM firmware
   over its HID interface.
 
-Both are single Go binaries with no third-party Go dependencies. Linux only.
+Both are single Go binaries with no third-party Go dependencies. They run on
+Linux, Windows and macOS.
+
+## Platforms
+
+|                    | Linux                     | Windows 64-bit               | macOS (Intel, Apple Silicon)    |
+| ------------------ | ------------------------- | ---------------------------- | ------------------------------- |
+| Video capture      | V4L2, direct              | ffmpeg (DirectShow)          | ffmpeg (AVFoundation)           |
+| Video formats      | MJPEG, YUYV               | MJPEG, YUYV                  | Raw (encoded to JPEG by ffmpeg) |
+| Audio capture      | ALSA (`arecord`)          | ffmpeg (DirectShow)          | ffmpeg (AVFoundation)           |
+| Picture controls   | V4L2 controls             | Written to the chip over HID | Written to the chip over HID    |
+| `ms2109tool` (HID) | `/dev/hidraw` (udev rule) | `hid.dll`, no driver needed  | IOKit                           |
+| Tested on hardware | Yes                       | Not yet                      | Not yet                         |
+
+On Windows and macOS the picture controls set the MS2109's brightness,
+contrast, saturation and hue registers directly over HID, because ffmpeg
+cannot change camera controls.
 
 ## Requirements
 
-- Linux with V4L2 (`uvcvideo`) and ALSA
 - Go 1.27 or newer to build
-- `arecord` (package `alsa-utils`) for audio in `hdmiview`
-- `ffmpeg` with `libx264` for recording in `hdmiview` (optional)
+- Linux: V4L2 (`uvcvideo`), ALSA and `arecord` (package `alsa-utils`) for audio
+- Windows and macOS: `ffmpeg` in `PATH` for capture (e.g. `winget install ffmpeg`,
+  `brew install ffmpeg`). On macOS allow camera and microphone access for the
+  terminal that runs `hdmiview` when asked.
+- `ffmpeg` with `libx264` for recording (all platforms, optional)
 
 ## Download
 
@@ -24,11 +42,16 @@ Prebuilt binaries are on the
 - **`v*` releases**: tagged versions.
 - **`devel`**: rolling pre-release, rebuilt from every commit on `main`.
 
-Each tool has its own archive for Linux `amd64`, `arm64` and `arm` (ARMv7,
-e.g. Raspberry Pi OS 32-bit):
+Each tool has its own archive per platform:
 
-- `hdmiview-<version>-linux-<arch>.tar.gz`
-- `ms2109tool-<version>-linux-<arch>.tar.gz` (includes the udev rule)
+| Platform                                                           | Archives                                                                       |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Linux `amd64`, `arm64`, `arm` (ARMv7, e.g. Raspberry Pi OS 32-bit) | `<tool>-<version>-linux-<arch>.tar.gz`                                         |
+| Windows 64-bit                                                     | `<tool>-<version>-windows-amd64.zip`                                           |
+| macOS Intel and Apple Silicon                                      | `<tool>-<version>-darwin-amd64.tar.gz`, `<tool>-<version>-darwin-arm64.tar.gz` |
+
+`<tool>` is `hdmiview` or `ms2109tool`; the Linux `ms2109tool` archive
+includes the udev rule.
 
 Each archive also contains this README and the licence. Check downloads
 against `SHA256SUMS`.
@@ -38,7 +61,8 @@ against `SHA256SUMS`.
 ```sh
 make            # builds bin/hdmiview and bin/ms2109tool
 make test
-make dist       # release archives in dist/
+make dist       # Linux and Windows release archives in dist/
+make dist DIST_TARGETS="darwin/amd64 darwin/arm64"   # on macOS (needs cgo)
 ```
 
 The version comes from `git describe`. Check it with `--version`:
@@ -65,8 +89,8 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ## Device access
 
-`ms2109tool` talks to the dongle through `/dev/hidrawN`, which is root-only by
-default. Install the udev rule to give the logged-in user access:
+On Windows and macOS no setup is needed. On Linux, `ms2109tool` talks to the
+dongle through `/dev/hidrawN`, which is root-only by default. Install the udev rule to give the logged-in user access:
 
 ```sh
 sudo cp udev/70-ms2109.rules /etc/udev/rules.d/
@@ -101,20 +125,20 @@ replugging is handled automatically.
 
 ### Flags
 
-| Flag                                    | Default                            | Description                                                              |
-| --------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
-| `--listen`                              | `127.0.0.1:8080`                   | HTTP address. Use `0.0.0.0:8080` to allow other machines on the network. |
-| `--video`                               | auto-detect                        | V4L2 device, e.g. `/dev/video0`                                          |
-| `--audio`                               | auto-detect                        | ALSA device, or `none` to disable audio                                  |
-| `--match`                               | `MS2109`                           | Device name used for auto-detection                                      |
-| `--format` `--width` `--height` `--fps` | `MJPG` 1920×1080 30                | Initial video mode. Overrides the saved mode.                            |
-| `--quality`                             | `90`                               | JPEG quality used for YUYV                                               |
-| `--recordings`                          | `~/Videos/hdmiview`                | Folder for recordings. Overrides the saved folder.                       |
-| `--snapshots`                           | `~/Pictures/hdmiview`              | Folder for snapshots. Overrides the saved folder.                        |
-| `--settings`                            | `~/.config/hdmiview/settings.json` | Where the video mode and folders are remembered. `""` disables saving.   |
-| `--log-level`                           | `info`                             | `debug`, `info`, `warn` or `error`                                       |
-| `--log-format`                          | `console`                          | `console` (zap development style) or `json` (zap production style)       |
-| `--version`                             |                                    | Print version and exit                                                   |
+| Flag                                    | Default                            | Description                                                                          |
+| --------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------ |
+| `--listen`                              | `127.0.0.1:8080`                   | HTTP address. Use `0.0.0.0:8080` to allow other machines on the network.             |
+| `--video`                               | auto-detect                        | Linux: V4L2 device, e.g. `/dev/video0`. Windows/macOS: device name, e.g. `USB Video` |
+| `--audio`                               | auto-detect                        | Linux: ALSA device. Windows/macOS: device name. `none` disables audio                |
+| `--match`                               | `MS2109`                           | Device name used for auto-detection                                                  |
+| `--format` `--width` `--height` `--fps` | `MJPG` 1920×1080 30                | Initial video mode. Overrides the saved mode.                                        |
+| `--quality`                             | `90`                               | JPEG quality used for YUYV                                                           |
+| `--recordings`                          | `~/Videos/hdmiview`                | Folder for recordings. Overrides the saved folder.                                   |
+| `--snapshots`                           | `~/Pictures/hdmiview`              | Folder for snapshots. Overrides the saved folder.                                    |
+| `--settings`                            | `~/.config/hdmiview/settings.json` | Where the video mode and folders are remembered. `""` disables saving.               |
+| `--log-level`                           | `info`                             | `debug`, `info`, `warn` or `error`                                                   |
+| `--log-format`                          | `console`                          | `console` (zap development style) or `json` (zap production style)                   |
+| `--version`                             |                                    | Print version and exit                                                               |
 
 Audio settings (volume, channel mode, latency) are stored in the browser.
 

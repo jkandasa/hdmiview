@@ -11,13 +11,6 @@ import (
 	"sync/atomic"
 )
 
-const (
-	audioRate     = 48000
-	audioChannels = 2
-	// 10 ms of S16_LE stereo per chunk
-	audioChunk = audioRate / 100 * audioChannels * 2
-)
-
 // findAudioCard returns the ALSA id of the first card whose /proc/asound/cards
 // entry contains match.
 func findAudioCard(match string) (string, error) {
@@ -34,7 +27,7 @@ func findAudioCard(match string) (string, error) {
 			continue
 		}
 		if i, j := strings.Index(line, "["), strings.Index(line, "]"); i >= 0 && j > i {
-			return "hw:CARD=" + strings.TrimSpace(line[i+1:j]) + ",DEV=0", nil
+			return "plughw:CARD=" + strings.TrimSpace(line[i+1:j]) + ",DEV=0", nil // plughw converts if the firmware offers another format
 		}
 	}
 	return "", fmt.Errorf("no ALSA card matching %q", match)

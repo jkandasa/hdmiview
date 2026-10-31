@@ -15,27 +15,34 @@ concurrency:
   cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
       - name: Check formatting
+        if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
 
-      - run: make vet
-      - run: make test
+      - run: go vet ./...
+      - run: go test ./...
 
-      - name: Version
-        id: version
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      short: ${{ steps.v.outputs.short }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
         run: |
           short=$(git rev-parse --short HEAD)
           if [ "$GITHUB_REF_TYPE" = tag ]; then
@@ -45,8 +52,54 @@ jobs:
           fi
           echo "short=$short" >> "$GITHUB_OUTPUT"
 
-      - name: Build release archives
-        run: make dist VERSION=${{ steps.version.outputs.version }}
+  build-linux-windows:
+    needs: [test, version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: make dist VERSION=${{ needs.version.outputs.version }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux-windows
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  build-macos:
+    needs: [test, version]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: make dist VERSION=${{ needs.version.outputs.version }} DIST_TARGETS="darwin/amd64 darwin/arm64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/*.tar.gz
+
+  publish:
+    needs: [version, build-linux-windows, build-macos]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum *.tar.gz *.zip > SHA256SUMS && cat SHA256SUMS
 
       - name: Publish rolling devel release
         if: github.ref == 'refs/heads/main'
@@ -63,7 +116,7 @@ jobs:
           gh release delete devel --cleanup-tag --yes || true
           gh release create devel dist/* \
             --target "$GITHUB_SHA" \
-            --title "devel (${{ steps.version.outputs.short }})" \
+            --title "devel (${{ needs.version.outputs.short }})" \
             --notes-file notes.md \
             --prerelease --latest=false
 

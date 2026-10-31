@@ -107,7 +107,7 @@ func (s *settings) save() error {
 
 // validateMode checks m against the modes the device reports.
 func validateMode(m videoMode, modes []videoModeInfo) error {
-	if m.Format == "YUYV" && (m.Quality < 10 || m.Quality > 100) {
+	if m.Format != "MJPG" && (m.Quality < 10 || m.Quality > 100) { // server-side JPEG encoding
 		return fmt.Errorf("quality must be 10..100")
 	}
 	for _, mi := range modes {
