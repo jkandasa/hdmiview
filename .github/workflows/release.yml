@@ -1,0 +1,83 @@
+name: Release
+
+# Every push to main replaces the rolling "devel" pre-release (its tag is
+# moved to the pushed commit). Every v* tag gets its own release.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - run: make vet
+      - run: make test
+
+      - name: Version
+        id: version
+        run: |
+          short=$(git rev-parse --short HEAD)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=devel-$short" >> "$GITHUB_OUTPUT"
+          fi
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+
+      - name: Build release archives
+        run: make dist VERSION=${{ steps.version.outputs.version }}
+
+      - name: Publish rolling devel release
+        if: github.ref == 'refs/heads/main'
+        run: |
+          {
+            echo "Rolling build of \`main\` at commit ${GITHUB_SHA}."
+            echo
+            echo "This release and its \`devel\` tag are recreated on every push to \`main\`."
+            echo
+            echo "### Latest commit"
+            echo
+            git log -1 --format='- %h %s' "$GITHUB_SHA"
+          } > notes.md
+          gh release delete devel --cleanup-tag --yes || true
+          gh release create devel dist/* \
+            --target "$GITHUB_SHA" \
+            --title "devel (${{ steps.version.outputs.short }})" \
+            --notes-file notes.md \
+            --prerelease --latest=false
+
+      - name: Publish tagged release
+        if: github.ref_type == 'tag'
+        run: |
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; esac
+          # compare with the previous v* tag, never with the rolling devel tag
+          if prev=$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null); then
+            flags+=(--notes-start-tag "$prev")
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            "${flags[@]}"

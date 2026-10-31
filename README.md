@@ -16,14 +16,46 @@ Both are single Go binaries with no third-party Go dependencies. Linux only.
 - `arecord` (package `alsa-utils`) for audio in `hdmiview`
 - `ffmpeg` with `libx264` for recording in `hdmiview` (optional)
 
+## Download
+
+Prebuilt binaries for Linux amd64 and arm64 are on the
+[releases page](https://github.com/jkandasa/hdmiview/releases):
+
+- **`v*` releases** – tagged versions.
+- **`devel`** – rolling pre-release, rebuilt from every commit on `main`.
+
+Each archive contains `hdmiview`, `ms2109tool`, this README, the licence and
+the udev rule. Check downloads against `SHA256SUMS`.
+
 ## Build
 
 ```sh
 make            # builds bin/hdmiview and bin/ms2109tool
 make test
+make dist       # release archives in dist/
 ```
 
-The version comes from `git describe`; check it with `--version`.
+The version comes from `git describe`. Check it with `--version`:
+
+```
+$ hdmiview --version
+hdmiview v1.0.0
+  commit:     1a2b3c4
+  built:      2026-10-31T17:35:57Z
+  go version: go1.27.0
+  platform:   linux/amd64
+```
+
+## Releasing
+
+- Every push to `main` deletes and recreates the `devel` pre-release, with its
+  `devel` tag moved to the pushed commit.
+- Pushing a tag such as `v1.0.0` creates a release for it, with notes since the
+  previous `v*` tag. Tags with a suffix (`v1.1.0-rc1`) become pre-releases.
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0
+```
 
 ## Device access
 
@@ -84,8 +116,12 @@ Audio settings (volume, channel mode, latency) are stored in the browser.
 
 The page shows whatever is on the captured screen, and it can save files on the
 server. By default it only listens on localhost. Only expose it to a network you
-trust. The server only lists, serves or deletes files it created itself
-(`hdmi-*.mp4`, `hdmi-*.mkv`, `hdmi-*.jpg`, never symlinks).
+trust.
+
+- Requests that change anything must come from the page itself: other web sites
+  open in the same browser cannot drive the API.
+- The server only lists, serves or deletes files it created itself
+  (`hdmi-*.mp4`, `hdmi-*.mkv`, `hdmi-*.jpg`, never symlinks).
 
 ### HTTP API
 
@@ -205,8 +241,17 @@ HID protocol: 9-byte feature reports. `0xB5`/`0xB6` read and write XDATA,
 Flashing firmware can make a device unusable. Back up first, and use this at
 your own risk.
 
-`backups/` holds dumps from the device this was developed on: the stock EEPROM
+`backups/` and `firmware/` hold files from the device this was developed on.
+`backups/` contains the stock EEPROM
 firmware (`original-eeprom.bin`, version 20072901), a 64 KiB XDATA RAM dump
 taken while it was running, and the EEPROM contents saved before each flash.
-The tests use them. They are only known to match that one device; always back
-up your own dongle before flashing.
+`firmware/` contains the images built from it with `build-pro`
+(`ms2109-pro-nochan.bin` is the one in use, `ms2109-pro-mine.bin` is the earlier
+build with swapped audio channels). The tests use these files. They are only
+known to match that one device, so always back up your own dongle before
+flashing.
+
+## License
+
+[Apache License 2.0](LICENSE). The datasheet in `docs/` is MacroSilicon's
+document and is not covered by this licence.

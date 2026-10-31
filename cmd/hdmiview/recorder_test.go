@@ -56,6 +56,9 @@ func TestRecorderSync(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not installed")
 	}
+	if os.Getenv("CI") != "" && os.Getenv("HDMIVIEW_SYNC_TEST") == "" {
+		t.Skip("real-time A/V sync test is skipped in CI; set HDMIVIEW_SYNC_TEST=1 to run it")
+	}
 	black, white := solidJPEG(t, 0), solidJPEG(t, 255)
 
 	for _, format := range []string{"mp4", "mkv"} {

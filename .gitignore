@@ -1,5 +1,3 @@
 # build output
 /bin/
-
-# firmware images built locally with ms2109tool build-pro
-/firmware/
+/dist/

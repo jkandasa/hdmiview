@@ -20,47 +20,68 @@ var (
 	BuildDate = ""
 )
 
-// VersionString describes the build, e.g.
-// "hdmiview v1.0.0 (commit 1a2b3c4, built 2026-10-31T16:00:00Z, go1.27.0 linux/amd64)".
-func VersionString(tool string) string {
-	version, commit, date, dirty := Version, Commit, BuildDate, false
+// BuildInfo is what --version reports.
+type BuildInfo struct {
+	Version, Commit, BuildDate, GoVersion, Platform string
+}
+
+// Info collects the build information, falling back to what the Go
+// toolchain embeds (VCS revision and time) when ldflags were not set.
+func Info() BuildInfo {
+	b := BuildInfo{Version: Version, Commit: Commit, BuildDate: BuildDate,
+		GoVersion: runtime.Version(), Platform: runtime.GOOS + "/" + runtime.GOARCH}
+	dirty := false
 	if info, ok := debug.ReadBuildInfo(); ok {
-		if version == "" && info.Main.Version != "" && info.Main.Version != "(devel)" {
-			version = info.Main.Version
+		if b.Version == "" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			b.Version = info.Main.Version
 		}
 		for _, s := range info.Settings {
 			switch s.Key {
 			case "vcs.revision":
-				if commit == "" {
-					commit = s.Value
+				if b.Commit == "" {
+					b.Commit = s.Value
 				}
 			case "vcs.time":
-				if date == "" {
-					date = s.Value
+				if b.BuildDate == "" {
+					b.BuildDate = s.Value
 				}
 			case "vcs.modified":
 				dirty = s.Value == "true"
 			}
 		}
 	}
-	if version == "" {
-		version = "dev"
+	if b.Version == "" {
+		b.Version = "dev"
 	}
-	if len(commit) > 7 {
-		commit = commit[:7]
+	if len(b.Commit) > 7 {
+		b.Commit = b.Commit[:7]
 	}
-	if dirty && commit != "" && !strings.HasSuffix(commit, "-dirty") {
-		commit += "-dirty"
+	if dirty && b.Commit != "" && !strings.HasSuffix(b.Commit, "-dirty") {
+		b.Commit += "-dirty"
 	}
-	var extra []string
-	if commit != "" {
-		extra = append(extra, "commit "+commit)
+	return b
+}
+
+// VersionString is the multi-line --version output.
+func VersionString(tool string) string {
+	b := Info()
+	or := func(s string) string {
+		if s == "" {
+			return "unknown"
+		}
+		return s
 	}
-	if date != "" {
-		extra = append(extra, "built "+date)
+	return fmt.Sprintf("%s %s\n  commit:     %s\n  built:      %s\n  go version: %s\n  platform:   %s",
+		tool, b.Version, or(b.Commit), or(b.BuildDate), b.GoVersion, b.Platform)
+}
+
+// ShortVersion is a one-line form for logs, e.g. "v1.0.0 (1a2b3c4, go1.27.0)".
+func ShortVersion() string {
+	b := Info()
+	if b.Commit != "" && b.Commit != b.Version {
+		return fmt.Sprintf("%s (%s, %s)", b.Version, b.Commit, b.GoVersion)
 	}
-	extra = append(extra, runtime.Version()+" "+runtime.GOOS+"/"+runtime.GOARCH)
-	return fmt.Sprintf("%s %s (%s)", tool, version, strings.Join(extra, ", "))
+	return fmt.Sprintf("%s (%s)", b.Version, b.GoVersion)
 }
 
 // PrintDefaults writes the flags of fs like flag.PrintDefaults, but with
