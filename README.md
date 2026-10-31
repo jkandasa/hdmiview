@@ -238,6 +238,8 @@ Changing the preferred mode makes the source send what is actually captured:
 
 - `720p60`: the source sends 720p60, captured at a real 60 fps.
 - `1080p30`: full resolution without frame-rate conversion in the chip.
+  Tested on hardware: an Armbian (RK3128) box switched to 1080p30, and the
+  MS2109 measured 1920×1080 at 29.99 Hz, 74.26 MHz.
 
 Only the preferred timing changes; every other supported mode stays listed, so
 the source can still be switched to them. To use a completely different EDID,
@@ -314,9 +316,10 @@ your own risk.
 `backups/` contains the stock EEPROM
 firmware (`original-eeprom.bin`, version 20072901), a 64 KiB XDATA RAM dump
 taken while it was running, and the EEPROM contents saved before each flash.
-`firmware/` contains the images built from it with `build-pro`
-(`ms2109-pro-nochan.bin` is the one in use, `ms2109-pro-mine.bin` is the earlier
-build with swapped audio channels). The tests use these files. They are only
+`firmware/` contains the images built from it with `build-pro`:
+`ms2109-pro-1080p30.bin` is the one in use (preferred EDID mode 1080p30),
+`ms2109-pro-nochan.bin` is the same without the EDID change, and
+`ms2109-pro-mine.bin` is the earlier build with swapped audio channels. The tests use these files. They are only
 known to match that one device, so always back up your own dongle before
 flashing.
 
