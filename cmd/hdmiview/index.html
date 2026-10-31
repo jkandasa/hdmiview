@@ -108,7 +108,12 @@
     <div class="hint">Audio format is fixed by the firmware: 48 kHz stereo 16-bit. Audio settings are stored in this browser.</div>
 
     <h3>Recording</h3>
-    <div class="row"><label for="recFmt">Format</label><select id="recFmt"></select><span></span></div>
+    <div class="row"><label for="recCodec">Codec</label>
+      <select id="recCodec">
+        <option value="h265">H.265 (smaller)</option>
+        <option value="h264">H.264 (plays everywhere)</option>
+      </select><span></span></div>
+    <div class="row"><label for="recFmt">Container</label><select id="recFmt"></select><span></span></div>
     <div class="row" id="recQualRow"><label for="recQual">Quality</label>
       <select id="recQual">
         <option value="high">High (larger)</option>
@@ -447,7 +452,9 @@ if (prefs.enabled) startAudio(); else updateAudioBtn();
 })();
 
 // ---------------- recording ----------------
-const recPrefs = Object.assign({ format: "mp4", quality: "normal" }, JSON.parse(localStorage.getItem("hdmiview.rec") || "{}"));
+const recPrefs = Object.assign({ format: "mp4", quality: "normal", codec: "h265" }, JSON.parse(localStorage.getItem("hdmiview.rec") || "{}"));
+const saveRecPrefs = () => localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs));
+const encLabel = e => e ? `${e.gpu ? "GPU" : "software"}, ${e.name}` : "";
 const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
 const fmtTime = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(v => String(v).padStart(2, "0")).join(":");
 let recState = null;
@@ -462,13 +469,19 @@ function renderRec(st) {
 
   if ($("recFmt").options.length === 0 && st.formats) {
     for (const k of ["mp4", "mkv"]) if (st.formats[k]) $("recFmt").add(new Option(st.formats[k], k));
-    $("recFmt").value = recPrefs.format; $("recQual").value = recPrefs.quality;
+    $("recFmt").value = recPrefs.format; $("recQual").value = recPrefs.quality; $("recCodec").value = recPrefs.codec;
     recFormUI();
   }
-  $("recFmt").disabled = $("recQual").disabled = st.active;
+  $("recFmt").disabled = $("recQual").disabled = $("recCodec").disabled = st.active;
+  if (st.encoders) {   // name the encoder each codec will use
+    for (const opt of $("recCodec").options) {
+      const e = st.encoders[opt.value], base = opt.value === "h265" ? "H.265 (smaller)" : "H.264 (plays everywhere)";
+      opt.textContent = e ? `${base}: ${encLabel(e)}` : base;
+    }
+  }
   if (st.error) setMsg("recMsg", st.error, true);
   else if (st.active && !st.frames && st.seconds >= 3) setMsg("recMsg", "Recording, but waiting for video: is the capture device in use by another program?", true);
-  else setMsg("recMsg", st.active ? `Recording ${st.file}. It continues if you close this page.` : `Saved to ${st.dir} on the server.`);
+  else setMsg("recMsg", st.active ? `Recording ${st.file} (${st.encoder?.codec === "h264" ? "H.264" : "H.265"}, ${encLabel(st.encoder)}). It continues if you close this page.` : `Saved to ${st.dir} on the server.`);
 
   if (st.recordings) {
     $("recList").innerHTML = "";
@@ -497,14 +510,15 @@ function renderRec(st) {
 }
 
 function recFormUI() {
-  const mp4 = $("recFmt").value === "mp4";
-  $("recQualRow").style.display = mp4 ? "" : "none";
-  $("recHint").textContent = mp4
-    ? "H.264 + AAC, encoded on the server CPU. Roughly 0.5 to 2 GB per hour for console content."
-    : "Stores the capture chip's MJPEG frames untouched with lossless audio. Almost no CPU, ~9 GB per hour at 1080p30.";
+  $("recHint").textContent = ($("recCodec").value === "h265"
+      ? "H.265: smallest files; needs a recent player (VLC, mpv, browsers with HEVC support). "
+      : "H.264: slightly larger files; plays on practically everything. ") +
+    "Encoded on the GPU when available, otherwise on the CPU. A static screen costs almost nothing. " +
+    ($("recFmt").value === "mp4" ? "MP4: AAC audio, widest compatibility." : "MKV: Opus audio, smallest audio track.");
 }
-$("recFmt").onchange = () => { recPrefs.format = $("recFmt").value; localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs)); recFormUI(); };
-$("recQual").onchange = () => { recPrefs.quality = $("recQual").value; localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs)); };
+$("recFmt").onchange = () => { recPrefs.format = $("recFmt").value; saveRecPrefs(); recFormUI(); };
+$("recQual").onchange = () => { recPrefs.quality = $("recQual").value; saveRecPrefs(); };
+$("recCodec").onchange = () => { recPrefs.codec = $("recCodec").value; saveRecPrefs(); recFormUI(); };
 
 async function pollRec() {
   try { renderRec(await api("/api/record")); } catch (e) { setMsg("recMsg", e.message, true); }
@@ -513,7 +527,7 @@ async function pollRec() {
 $("recBtn").onclick = async () => {
   $("recBtn").disabled = true;
   try {
-    const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality };
+    const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality, codec: recPrefs.codec };
     await api("/api/record", body);
   } catch (e) { alert("Recording: " + e.message); }
   await pollRec();

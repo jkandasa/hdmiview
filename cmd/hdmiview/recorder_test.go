@@ -62,10 +62,22 @@ func TestRecorderSync(t *testing.T) {
 	black, white := solidJPEG(t, 0), solidJPEG(t, 255)
 
 	for _, c := range []struct {
-		format, inputs string
-	}{{"mp4", "pipes"}, {"mkv", "pipes"}, {"mp4", "stdin+tcp"}, {"mkv", "stdin+tcp"}} {
+		format, inputs, codec string
+		software              bool // force the software encoder
+	}{
+		{"mp4", "pipes", "h265", false},
+		{"mkv", "pipes", "h265", false},
+		{"mp4", "pipes", "h264", false},
+		{"mkv", "stdin+tcp", "h264", false},
+		{"mp4", "stdin+tcp", "h265", true},
+		{"mkv", "pipes", "h264", true},
+	} {
 		format := c.format
-		t.Run(c.format+"/"+c.inputs, func(t *testing.T) {
+		name := c.format + "/" + c.inputs + "/" + c.codec
+		if c.software {
+			name += "/software"
+		}
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			if keep := os.Getenv("HDMIVIEW_KEEP"); keep != "" {
 				dir = keep
@@ -75,7 +87,12 @@ func TestRecorderSync(t *testing.T) {
 			if c.inputs == "stdin+tcp" { // the Windows input path
 				rec.inputs = newStdinTCPInputs
 			}
-			name, err := rec.start(format, "normal", 30)
+			if c.software {
+				rec.encoder = newEncoderPicker("") // software only, no probing
+			}
+			enc, _ := rec.encoder.get(c.codec)
+			t.Logf("encoder %s (gpu %v)", enc.Name, enc.GPU)
+			name, err := rec.start(format, "normal", c.codec, 30)
 			if err != nil {
 				t.Fatal(err)
 			}

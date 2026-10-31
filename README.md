@@ -27,12 +27,18 @@ cannot change camera controls.
 
 ## Requirements
 
-- Go 1.27 or newer to build
-- Linux: V4L2 (`uvcvideo`), ALSA and `arecord` (package `alsa-utils`) for audio
-- Windows and macOS: `ffmpeg` in `PATH` for capture (e.g. `winget install ffmpeg`,
-  `brew install ffmpeg`). On macOS allow camera and microphone access for the
-  terminal that runs `hdmiview` when asked.
-- `ffmpeg` with `libx264` for recording (all platforms, optional)
+To run the released binaries:
+
+- **Linux**: `arecord` (package `alsa-utils`) for audio in `hdmiview`. V4L2
+  (`uvcvideo`) and ALSA are part of the kernel.
+- **Windows and macOS**: `ffmpeg` in `PATH` for capture (e.g.
+  `winget install ffmpeg`, `brew install ffmpeg`). On macOS allow camera and
+  microphone access for the terminal that runs `hdmiview` when asked.
+- **Recording** (optional, all platforms): `ffmpeg`, with `libx264` and
+  `libx265` for software encoding. A GPU encoder is used instead when one works
+  (VAAPI, NVENC, Quick Sync, AMF or VideoToolbox).
+- `ms2109tool` needs nothing else. On Linux, install the udev rule (see
+  [Device access](#device-access)).
 
 ## Download
 
@@ -57,6 +63,9 @@ Each archive also contains this README and the licence. Check downloads
 against `SHA256SUMS`.
 
 ## Build
+
+Building needs Go 1.27 or newer (and Apple's command line tools for the macOS
+builds, which use cgo).
 
 ```sh
 make            # builds bin/hdmiview and bin/ms2109tool
@@ -110,18 +119,37 @@ Open <http://127.0.0.1:8080/>.
 
 ### Features
 
-| Area      | What you get                                                                                                                                                                                                                                                                |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Video     | MJPEG straight from the chip (no re-encoding), or uncompressed YUYV encoded to JPEG on the server. Format, resolution and frame rate are chosen from what the device reports. Fit / 1:1 / fullscreen.                                                                       |
-| Picture   | Brightness, contrast, saturation and hue sliders with reset to the device default.                                                                                                                                                                                          |
+| Area      | What you get                                                                                                                                                                                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Video     | MJPEG straight from the chip (no re-encoding), or uncompressed YUYV encoded to JPEG on the server. Format, resolution and frame rate are chosen from what the device reports. Fit / 1:1 / fullscreen.                                                                          |
+| Picture   | Brightness, contrast, saturation and hue sliders with reset to the device default.                                                                                                                                                                                             |
 | Audio     | 48 kHz stereo through Web Audio with about 50 to 250 ms latency. Volume up to 300%, mute, channel mode (stereo, swap, mono, left, right), latency setting and level meters. Audio starts automatically; if the browser blocks autoplay, the first click on the page starts it. |
-| Recording | Server side with ffmpeg, so it keeps going when the page is closed. MP4 (H.264 + AAC) or MKV (original MJPEG + PCM). Audio and video stay in sync to within about 10 ms.                                                                                                    |
-| Snapshots | Saved as JPEG on the server.                                                                                                                                                                                                                                                |
-| Files     | Recordings and snapshots can be listed, downloaded and deleted from the page. Their folders can be changed from the page.                                                                                                                                                   |
+| Recording | Server side with ffmpeg, so it keeps going when the page is closed. H.265 or H.264, in MP4 (AAC audio) or MKV (Opus audio), on the GPU when available. See [Recording](#recording). Audio and video stay in sync to within about 10 ms.                                        |
+| Snapshots | Saved as JPEG on the server.                                                                                                                                                                                                                                                   |
+| Files     | Recordings and snapshots can be listed, downloaded and deleted from the page. Their folders can be changed from the page.                                                                                                                                                      |
 
 The capture device is opened only while somebody is watching or recording, so
 other programs (OBS, ffplay) can use it the rest of the time. Unplugging and
 replugging is handled automatically.
+
+### Recording
+
+| Choice    | Options                                                                            |
+| --------- | ---------------------------------------------------------------------------------- |
+| Codec     | **H.265** (default, smallest files) or **H.264** (plays on practically everything) |
+| Container | **MP4** with AAC audio, or **MKV** with Opus audio                                 |
+| Quality   | High, Normal or Small                                                              |
+
+The encoder is chosen at startup by test-encoding a few frames: the first
+working GPU encoder (VAAPI on Linux, NVENC, Quick Sync or AMF on Windows,
+VideoToolbox on macOS), otherwise software (`libx265 ultrafast` or
+`libx264 veryfast`, both fast enough for 1080p30). The page shows which one
+each codec will use.
+
+A keyframe is written only every 60 seconds, so a static screen costs almost
+nothing: 10 seconds of an idle 1080p console measured 16 KB with the GPU
+H.265 encoder, against 9.9 MB for the chip's raw MJPEG. MP4 files are written
+in 2 second fragments and stay playable if recording is interrupted.
 
 ### Flags
 
@@ -155,20 +183,20 @@ trust.
 
 ### HTTP API
 
-| Method & path                      | Purpose                                                                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /video`                       | MJPEG stream (`multipart/x-mixed-replace`)                                                                                             |
-| `GET /audio`                       | Raw PCM stream, S16LE, 48 kHz, 2 channels                                                                                              |
-| `GET /snapshot.jpg`                | Current frame                                                                                                                          |
-| `POST /api/snapshot`               | Save a snapshot to the snapshots folder                                                                                                |
-| `GET /api/snapshots`               | List snapshots                                                                                                                         |
-| `GET`, `DELETE /snapshots/{name}`  | Get (`?download=1` forces download) or delete a snapshot                                                                               |
-| `GET`, `POST /api/video`           | Current mode and supported modes; change the mode                                                                                      |
-| `GET`, `POST /api/controls`        | Picture controls; set `{"id", "value"}` or `{"id", "reset": true}`                                                                     |
-| `GET`, `POST /api/record`          | Recording status and list; `{"action": "start", "format": "mp4"\|"mkv", "quality": "high"\|"normal"\|"small"}` or `{"action": "stop"}` |
-| `GET`, `DELETE /recordings/{name}` | Download or delete a recording                                                                                                         |
-| `GET`, `POST /api/folders`         | Recording and snapshot folders                                                                                                         |
-| `GET /stats`                       | Frame rate, bitrate, audio state, viewer count                                                                                         |
+| Method & path                      | Purpose                                                                                                                                                         |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /video`                       | MJPEG stream (`multipart/x-mixed-replace`)                                                                                                                      |
+| `GET /audio`                       | Raw PCM stream, S16LE, 48 kHz, 2 channels                                                                                                                       |
+| `GET /snapshot.jpg`                | Current frame                                                                                                                                                   |
+| `POST /api/snapshot`               | Save a snapshot to the snapshots folder                                                                                                                         |
+| `GET /api/snapshots`               | List snapshots                                                                                                                                                  |
+| `GET`, `DELETE /snapshots/{name}`  | Get (`?download=1` forces download) or delete a snapshot                                                                                                        |
+| `GET`, `POST /api/video`           | Current mode and supported modes; change the mode                                                                                                               |
+| `GET`, `POST /api/controls`        | Picture controls; set `{"id", "value"}` or `{"id", "reset": true}`                                                                                              |
+| `GET`, `POST /api/record`          | Recording status and list; `{"action": "start", "codec": "h265"\|"h264", "format": "mp4"\|"mkv", "quality": "high"\|"normal"\|"small"}` or `{"action": "stop"}` |
+| `GET`, `DELETE /recordings/{name}` | Download or delete a recording                                                                                                                                  |
+| `GET`, `POST /api/folders`         | Recording and snapshot folders                                                                                                                                  |
+| `GET /stats`                       | Frame rate, bitrate, audio state, viewer count                                                                                                                  |
 
 ## ms2109tool
 

@@ -559,6 +559,7 @@ func main() {
 			Action  string `json:"action"`
 			Format  string `json:"format"`
 			Quality string `json:"quality"`
+			Codec   string `json:"codec"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -568,7 +569,7 @@ func main() {
 		switch req.Action {
 		case "start":
 			mode, _ := st.get()
-			_, err = rec.start(req.Format, req.Quality, mode.FPS)
+			_, err = rec.start(req.Format, req.Quality, req.Codec, mode.FPS)
 		case "stop":
 			err = rec.stopRecording()
 		default:

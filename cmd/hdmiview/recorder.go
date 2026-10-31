@@ -25,29 +25,31 @@ import (
 type recordFormat struct {
 	Ext   string
 	Label string
-	args  func(quality string) []string
+	args  func(enc videoEncoder) []string // container and audio options
 }
 
+// Both formats use the chosen codec's detected encoder (GPU if possible). A
+// keyframe only every 60 s keeps static screens tiny; no B-frames keeps the
+// first video timestamp at 0 so audio and video start together.
 var recordFormats = map[string]recordFormat{
-	"mp4": {".mp4", "MP4 (H.264, small)", func(q string) []string {
-		crf := map[string]string{"high": "18", "normal": "23", "small": "28"}[q]
-		if crf == "" {
-			crf = "23"
+	"mp4": {".mp4", "MP4 (AAC audio)", func(enc videoEncoder) []string {
+		args := []string{"-c:a", "aac", "-b:a", "128k",
+			// fragmented MP4 written in 2 s pieces: the size grows steadily
+			// and an interrupted recording stays playable
+			"-movflags", "+empty_moov+default_base_moof", "-frag_duration", "2000000"}
+		if enc.Codec == "h265" {
+			args = append(args, "-tag:v", "hvc1") // so Apple players accept it
 		}
-		// -bf 0: B-frames delay the first video timestamp by two frames,
-		// which fragmented MP4 cannot express (audio would lead by ~67 ms).
-		return []string{"-c:v", "libx264", "-preset", "veryfast", "-crf", crf, "-bf", "0", "-pix_fmt", "yuv420p",
-			"-c:a", "aac", "-b:a", "192k",
-			// fragmented MP4 stays playable if recording is interrupted
-			"-movflags", "+frag_keyframe+empty_moov+default_base_moof"}
+		return args
 	}},
-	"mkv": {".mkv", "MKV (original MJPEG, large)", func(string) []string {
-		return []string{"-c:v", "copy", "-c:a", "pcm_s16le"}
+	"mkv": {".mkv", "MKV (Opus audio)", func(videoEncoder) []string {
+		return []string{"-c:a", "libopus", "-b:a", "128k"}
 	}},
 }
 
 type recording struct {
 	name, path, format, quality string
+	encoder                     videoEncoder
 	started                     time.Time
 	cmd                         *exec.Cmd
 	stop                        chan struct{}
@@ -64,13 +66,14 @@ type recorder struct {
 	video   *hub
 	audio   *hub // nil when audio is disabled
 	inputs  func(withAudio bool) (recInput, error)
+	encoder *encoderPicker
 	active  *recording
 	lastErr string
 }
 
 func newRecorder(store *fileStore, video, audio *hub) *recorder {
 	ff, _ := exec.LookPath("ffmpeg")
-	return &recorder{store: store, ffmpeg: ff, video: video, audio: audio, inputs: newRecInputs}
+	return &recorder{store: store, ffmpeg: ff, video: video, audio: audio, inputs: newRecInputs, encoder: newEncoderPicker(ff)}
 }
 
 // recInput connects the recorder to ffmpeg's video and audio inputs.
@@ -112,7 +115,14 @@ func stampedFeed(h *hub, n int, stop <-chan struct{}) <-chan stamped {
 	return out
 }
 
-func (r *recorder) start(format, quality string, fps int) (string, error) {
+func (r *recorder) start(format, quality, codec string, fps int) (string, error) {
+	if codec == "" {
+		codec = "h265"
+	}
+	enc, ok := r.encoder.get(codec)
+	if !ok {
+		return "", fmt.Errorf("unknown codec %q (use h264 or h265)", codec)
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.ffmpeg == "" {
@@ -130,7 +140,7 @@ func (r *recorder) start(format, quality string, fps int) (string, error) {
 		return "", err
 	}
 	name := "hdmi-" + time.Now().Format("20060102-150405") + f.Ext
-	rec := &recording{name: name, path: filepath.Join(dir, name), format: format, quality: quality,
+	rec := &recording{name: name, path: filepath.Join(dir, name), format: format, quality: quality, encoder: enc,
 		started: time.Now(), stop: make(chan struct{}), exited: make(chan struct{}), stderr: &tailBuffer{max: 4096}}
 
 	withAudio := r.audio != nil
@@ -141,15 +151,18 @@ func (r *recorder) start(format, quality string, fps int) (string, error) {
 	if fps <= 0 {
 		fps = 30
 	}
-	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin",
-		"-thread_queue_size", "1024", "-f", "mjpeg", "-framerate", fmt.Sprint(fps), "-i", in.videoURL()}
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin"}
+	args = append(args, enc.pre...)
+	args = append(args, "-thread_queue_size", "1024", "-f", "mjpeg", "-framerate", fmt.Sprint(fps), "-i", in.videoURL())
 	if withAudio {
 		args = append(args, "-thread_queue_size", "1024", "-f", "s16le",
 			"-ar", fmt.Sprint(audioRate), "-ac", fmt.Sprint(audioChannels), "-i", in.audioURL(),
 			"-map", "0:v", "-map", "1:a")
 	}
 	args = append(args, "-fps_mode", "cfr")
-	args = append(args, f.args(quality)...)
+	args = append(args, enc.args(quality)...)
+	args = append(args, "-g", fmt.Sprint(fps*60), "-bf", "0")
+	args = append(args, f.args(enc)...)
 	args = append(args, rec.path)
 
 	rec.cmd = exec.Command(r.ffmpeg, args...)
@@ -268,7 +281,8 @@ func (r *recorder) start(format, quality string, fps int) (string, error) {
 
 	r.active = rec
 	r.lastErr = ""
-	slog.Info("recording started", "file", rec.path, "format", format, "quality", quality, "fps", fps)
+	slog.Info("recording started", "file", rec.path, "format", format, "codec", codecNames[enc.Codec],
+		"encoder", enc.Name, "gpu", enc.GPU, "quality", quality, "fps", fps)
 	return name, nil
 }
 
@@ -337,9 +351,13 @@ func (r *recorder) status() map[string]any {
 	}
 	st := map[string]any{"available": r.ffmpeg != "", "active": r.active != nil, "dir": r.store.Dir(),
 		"error": r.lastErr, "formats": formats, "audio": r.audio != nil}
+	if encs, ready := r.encoder.all(); ready {
+		st["encoders"] = encs
+	}
 	if rec := r.active; rec != nil {
 		st["file"] = rec.name
 		st["format"] = rec.format
+		st["encoder"] = rec.encoder
 		st["seconds"] = int(time.Since(rec.started).Seconds())
 		st["frames"] = rec.frames.Load()
 		if fi, err := os.Stat(rec.path); err == nil {
