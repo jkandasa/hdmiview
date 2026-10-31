@@ -25,30 +25,35 @@ import (
 type recordFormat struct {
 	Ext   string
 	Label string
-	args  func(enc videoEncoder) []string // container and audio options
+	args  func(enc videoEncoder) []string // container options
+	audio func(quality string) []string   // audio codec options
 }
 
-// Both formats use the chosen codec's detected encoder (GPU if possible). A
-// keyframe only every 60 s keeps static screens tiny; no B-frames keeps the
-// first video timestamp at 0 so audio and video start together.
+// Audio bitrates follow the quality level. The chip delivers 48 kHz 16-bit
+// stereo (1536 kbit/s); Opus and AAC both shrink to almost nothing on
+// silence, unlike MP3.
 var recordFormats = map[string]recordFormat{
-	"mp4": {".mp4", "MP4 (AAC audio)", func(enc videoEncoder) []string {
-		args := []string{"-c:a", "aac", "-b:a", "128k",
+	"mp4": {".mp4", "MP4 (AAC audio)",
+		func(enc videoEncoder) []string {
 			// fragmented MP4 written in 2 s pieces: the size grows steadily
 			// and an interrupted recording stays playable
-			"-movflags", "+empty_moov+default_base_moof", "-frag_duration", "2000000"}
-		if enc.Codec == "h265" {
-			args = append(args, "-tag:v", "hvc1") // so Apple players accept it
-		}
-		return args
-	}},
-	"mkv": {".mkv", "MKV (Opus audio)", func(videoEncoder) []string {
-		return []string{"-c:a", "libopus", "-b:a", "128k"}
-	}},
+			args := []string{"-movflags", "+empty_moov+default_base_moof", "-frag_duration", "2000000"}
+			if enc.Codec == "h265" {
+				args = append(args, "-tag:v", "hvc1") // so Apple players accept it
+			}
+			return args
+		},
+		func(q string) []string { return []string{"-c:a", "aac", "-b:a", level(q, 160, 128, 96) + "k"} },
+	},
+	"mkv": {".mkv", "MKV (Opus audio)",
+		func(videoEncoder) []string { return nil },
+		func(q string) []string { return []string{"-c:a", "libopus", "-b:a", level(q, 128, 96, 64) + "k"} },
+	},
 }
 
 type recording struct {
 	name, path, format, quality string
+	audio                       bool
 	encoder                     videoEncoder
 	started                     time.Time
 	cmd                         *exec.Cmd
@@ -115,7 +120,7 @@ func stampedFeed(h *hub, n int, stop <-chan struct{}) <-chan stamped {
 	return out
 }
 
-func (r *recorder) start(format, quality, codec string, fps int) (string, error) {
+func (r *recorder) start(format, quality, codec string, withAudio bool, fps int) (string, error) {
 	if codec == "" {
 		codec = "h265"
 	}
@@ -140,10 +145,10 @@ func (r *recorder) start(format, quality, codec string, fps int) (string, error)
 		return "", err
 	}
 	name := "hdmi-" + time.Now().Format("20060102-150405") + f.Ext
-	rec := &recording{name: name, path: filepath.Join(dir, name), format: format, quality: quality, encoder: enc,
+	rec := &recording{name: name, path: filepath.Join(dir, name), format: format, quality: quality, encoder: enc, audio: withAudio,
 		started: time.Now(), stop: make(chan struct{}), exited: make(chan struct{}), stderr: &tailBuffer{max: 4096}}
 
-	withAudio := r.audio != nil
+	withAudio = withAudio && r.audio != nil
 	in, err := r.inputs(withAudio)
 	if err != nil {
 		return "", err
@@ -163,6 +168,9 @@ func (r *recorder) start(format, quality, codec string, fps int) (string, error)
 	args = append(args, enc.args(quality)...)
 	args = append(args, "-g", fmt.Sprint(fps*60), "-bf", "0")
 	args = append(args, f.args(enc)...)
+	if withAudio {
+		args = append(args, f.audio(quality)...)
+	}
 	args = append(args, rec.path)
 
 	rec.cmd = exec.Command(r.ffmpeg, args...)
@@ -358,6 +366,7 @@ func (r *recorder) status() map[string]any {
 		st["file"] = rec.name
 		st["format"] = rec.format
 		st["encoder"] = rec.encoder
+		st["recordingAudio"] = rec.audio
 		st["seconds"] = int(time.Since(rec.started).Seconds())
 		st["frames"] = rec.frames.Load()
 		if fi, err := os.Stat(rec.path); err == nil {

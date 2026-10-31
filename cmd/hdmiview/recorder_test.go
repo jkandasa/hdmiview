@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -92,7 +93,7 @@ func TestRecorderSync(t *testing.T) {
 			}
 			enc, _ := rec.encoder.get(c.codec)
 			t.Logf("encoder %s (gpu %v)", enc.Name, enc.GPU)
-			name, err := rec.start(format, "normal", c.codec, 30)
+			name, err := rec.start(format, "normal", c.codec, true, 30)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -144,5 +145,61 @@ func TestRecorderSync(t *testing.T) {
 				t.Errorf("video %.2fs vs audio %.2fs", vdur, adur)
 			}
 		})
+	}
+}
+
+// Audio can be left out, and the audio bitrate follows the quality level.
+func TestRecorderAudioOptions(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	frame := solidJPEG(t, 128)
+	for _, c := range []struct {
+		format, quality string
+		audio           bool
+		wantStreams     string
+	}{
+		{"mkv", "small", false, "video"},
+		{"mkv", "small", true, "video,audio"},
+		{"mp4", "high", true, "video,audio"},
+	} {
+		dir := t.TempDir()
+		video, audio := newHub(1), newHub(50)
+		rec := newRecorder(newFileStore(dir, ".mp4", ".mkv"), video, audio)
+		rec.encoder = newEncoderPicker("") // software, no probing
+		name, err := rec.start(c.format, c.quality, "h264", c.audio, 30)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond)
+		var phase float64
+		for i := 0; i < 30; i++ { // 1 s
+			video.publish(frame)
+			for j := 0; j < 3; j++ {
+				audio.publish(toneChunk(true, &phase))
+			}
+			time.Sleep(33 * time.Millisecond)
+		}
+		if err := rec.stopRecording(); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_type,codec_name",
+			"-of", "csv=p=0", filepath.Join(dir, name)).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var kinds []string
+		for _, l := range strings.Fields(string(out)) {
+			kinds = append(kinds, strings.Split(l, ",")[1])
+		}
+		if got := strings.Join(kinds, ","); got != c.wantStreams {
+			t.Errorf("%s audio=%v: streams %q (%s), want %q", c.format, c.audio, got, strings.TrimSpace(string(out)), c.wantStreams)
+		}
+	}
+	if got := recordFormats["mkv"].audio("small"); strings.Join(got, " ") != "-c:a libopus -b:a 64k" {
+		t.Errorf("mkv small audio = %v", got)
+	}
+	if got := recordFormats["mp4"].audio("high"); strings.Join(got, " ") != "-c:a aac -b:a 160k" {
+		t.Errorf("mp4 high audio = %v", got)
 	}
 }

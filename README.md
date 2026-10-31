@@ -138,7 +138,13 @@ replugging is handled automatically.
 | --------- | ---------------------------------------------------------------------------------- |
 | Codec     | **H.265** (default, smallest files) or **H.264** (plays on practically everything) |
 | Container | **MP4** with AAC audio, or **MKV** with Opus audio                                 |
-| Quality   | High, Normal or Small                                                              |
+| Quality   | High, Normal or Small (also sets the audio bitrate)                                |
+| Audio     | On or off                                                                          |
+
+The chip delivers 48 kHz 16-bit stereo audio. It is compressed with Opus in
+MKV (128 / 96 / 64 kbit/s for High / Normal / Small) or AAC in MP4 (160 / 128 /
+96 kbit/s). Both shrink to almost nothing on silence: a silent minute is about
+13 KB with Opus and 28 KB with AAC (MP3 would stay at the full bitrate).
 
 The encoder is chosen at startup by test-encoding a few frames: the first
 working GPU encoder (VAAPI on Linux, NVENC, Quick Sync or AMF on Windows,
@@ -183,20 +189,20 @@ trust.
 
 ### HTTP API
 
-| Method & path                      | Purpose                                                                                                                                                         |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /video`                       | MJPEG stream (`multipart/x-mixed-replace`)                                                                                                                      |
-| `GET /audio`                       | Raw PCM stream, S16LE, 48 kHz, 2 channels                                                                                                                       |
-| `GET /snapshot.jpg`                | Current frame                                                                                                                                                   |
-| `POST /api/snapshot`               | Save a snapshot to the snapshots folder                                                                                                                         |
-| `GET /api/snapshots`               | List snapshots                                                                                                                                                  |
-| `GET`, `DELETE /snapshots/{name}`  | Get (`?download=1` forces download) or delete a snapshot                                                                                                        |
-| `GET`, `POST /api/video`           | Current mode and supported modes; change the mode                                                                                                               |
-| `GET`, `POST /api/controls`        | Picture controls; set `{"id", "value"}` or `{"id", "reset": true}`                                                                                              |
-| `GET`, `POST /api/record`          | Recording status and list; `{"action": "start", "codec": "h265"\|"h264", "format": "mp4"\|"mkv", "quality": "high"\|"normal"\|"small"}` or `{"action": "stop"}` |
-| `GET`, `DELETE /recordings/{name}` | Download or delete a recording                                                                                                                                  |
-| `GET`, `POST /api/folders`         | Recording and snapshot folders                                                                                                                                  |
-| `GET /stats`                       | Frame rate, bitrate, audio state, viewer count                                                                                                                  |
+| Method & path                      | Purpose                                                                                                                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /video`                       | MJPEG stream (`multipart/x-mixed-replace`)                                                                                                                                            |
+| `GET /audio`                       | Raw PCM stream, S16LE, 48 kHz, 2 channels                                                                                                                                             |
+| `GET /snapshot.jpg`                | Current frame                                                                                                                                                                         |
+| `POST /api/snapshot`               | Save a snapshot to the snapshots folder                                                                                                                                               |
+| `GET /api/snapshots`               | List snapshots                                                                                                                                                                        |
+| `GET`, `DELETE /snapshots/{name}`  | Get (`?download=1` forces download) or delete a snapshot                                                                                                                              |
+| `GET`, `POST /api/video`           | Current mode and supported modes; change the mode                                                                                                                                     |
+| `GET`, `POST /api/controls`        | Picture controls; set `{"id", "value"}` or `{"id", "reset": true}`                                                                                                                    |
+| `GET`, `POST /api/record`          | Recording status and list; `{"action": "start", "codec": "h265"\|"h264", "format": "mp4"\|"mkv", "quality": "high"\|"normal"\|"small", "audio": true\|false}` or `{"action": "stop"}` |
+| `GET`, `DELETE /recordings/{name}` | Download or delete a recording                                                                                                                                                        |
+| `GET`, `POST /api/folders`         | Recording and snapshot folders                                                                                                                                                        |
+| `GET /stats`                       | Frame rate, bitrate, audio state, viewer count                                                                                                                                        |
 
 ## ms2109tool
 

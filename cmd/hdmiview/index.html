@@ -120,6 +120,7 @@
         <option value="normal" selected>Normal</option>
         <option value="small">Small</option>
       </select><span></span></div>
+    <div class="row"><label for="recAudio">Audio</label><label><input id="recAudio" type="checkbox"> record audio</label><span></span></div>
     <div class="hint" id="recHint"></div>
     <div class="msg" id="recMsg"></div>
     <ul id="recList"></ul>
@@ -452,7 +453,7 @@ if (prefs.enabled) startAudio(); else updateAudioBtn();
 })();
 
 // ---------------- recording ----------------
-const recPrefs = Object.assign({ format: "mp4", quality: "normal", codec: "h265" }, JSON.parse(localStorage.getItem("hdmiview.rec") || "{}"));
+const recPrefs = Object.assign({ format: "mp4", quality: "normal", codec: "h265", audio: true }, JSON.parse(localStorage.getItem("hdmiview.rec") || "{}"));
 const saveRecPrefs = () => localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs));
 const encLabel = e => e ? `${e.gpu ? "GPU" : "software"}, ${e.name}` : "";
 const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
@@ -469,10 +470,10 @@ function renderRec(st) {
 
   if ($("recFmt").options.length === 0 && st.formats) {
     for (const k of ["mp4", "mkv"]) if (st.formats[k]) $("recFmt").add(new Option(st.formats[k], k));
-    $("recFmt").value = recPrefs.format; $("recQual").value = recPrefs.quality; $("recCodec").value = recPrefs.codec;
+    $("recFmt").value = recPrefs.format; $("recQual").value = recPrefs.quality; $("recCodec").value = recPrefs.codec; $("recAudio").checked = recPrefs.audio;
     recFormUI();
   }
-  $("recFmt").disabled = $("recQual").disabled = $("recCodec").disabled = st.active;
+  $("recFmt").disabled = $("recQual").disabled = $("recCodec").disabled = $("recAudio").disabled = st.active;
   if (st.encoders) {   // name the encoder each codec will use
     for (const opt of $("recCodec").options) {
       const e = st.encoders[opt.value], base = opt.value === "h265" ? "H.265 (smaller)" : "H.264 (plays everywhere)";
@@ -514,11 +515,13 @@ function recFormUI() {
       ? "H.265: smallest files; needs a recent player (VLC, mpv, browsers with HEVC support). "
       : "H.264: slightly larger files; plays on practically everything. ") +
     "Encoded on the GPU when available, otherwise on the CPU. A static screen costs almost nothing. " +
-    ($("recFmt").value === "mp4" ? "MP4: AAC audio, widest compatibility." : "MKV: Opus audio, smallest audio track.");
+    ($("recFmt").value === "mp4" ? "MP4: AAC audio, widest compatibility." : "MKV: Opus audio, smallest audio track.") +
+    " Audio bitrate follows the quality: " + ($("recFmt").value === "mp4" ? "160 / 128 / 96" : "128 / 96 / 64") + " kbit/s.";
 }
 $("recFmt").onchange = () => { recPrefs.format = $("recFmt").value; saveRecPrefs(); recFormUI(); };
 $("recQual").onchange = () => { recPrefs.quality = $("recQual").value; saveRecPrefs(); };
 $("recCodec").onchange = () => { recPrefs.codec = $("recCodec").value; saveRecPrefs(); recFormUI(); };
+$("recAudio").onchange = () => { recPrefs.audio = $("recAudio").checked; saveRecPrefs(); };
 
 async function pollRec() {
   try { renderRec(await api("/api/record")); } catch (e) { setMsg("recMsg", e.message, true); }
@@ -527,7 +530,7 @@ async function pollRec() {
 $("recBtn").onclick = async () => {
   $("recBtn").disabled = true;
   try {
-    const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality, codec: recPrefs.codec };
+    const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality, codec: recPrefs.codec, audio: recPrefs.audio };
     await api("/api/record", body);
   } catch (e) { alert("Recording: " + e.message); }
   await pollRec();
