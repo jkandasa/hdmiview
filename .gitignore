@@ -1,8 +1,5 @@
 # build output
 /bin/
 
-# Device dumps and firmware images: they contain (or are built from) the
-# vendor's EEPROM firmware, so they stay local.
-/backups/
+# firmware images built locally with ms2109tool build-pro
 /firmware/
-*.bin

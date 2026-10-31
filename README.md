@@ -48,14 +48,14 @@ Open <http://127.0.0.1:8080/>.
 
 ### Features
 
-| Area | What you get |
-|---|---|
-| Video | MJPEG straight from the chip (no re-encoding), or uncompressed YUYV encoded to JPEG on the server. Format, resolution and frame rate are chosen from what the device reports. Fit / 1:1 / fullscreen. |
-| Picture | Brightness, contrast, saturation and hue sliders with reset to the device default. |
-| Audio | 48 kHz stereo through Web Audio with about 50–250 ms latency. Volume up to 300%, mute, channel mode (stereo, swap, mono, left, right), latency setting and level meters. Audio starts automatically; if the browser blocks autoplay, the first click on the page starts it. |
-| Recording | Server side with ffmpeg, so it keeps going when the page is closed. MP4 (H.264 + AAC) or MKV (original MJPEG + PCM). Audio and video stay in sync to within about 10 ms. |
-| Snapshots | Saved as JPEG on the server. |
-| Files | Recordings and snapshots can be listed, downloaded and deleted from the page. Their folders can be changed from the page. |
+| Area      | What you get                                                                                                                                                                                                                                                                |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Video     | MJPEG straight from the chip (no re-encoding), or uncompressed YUYV encoded to JPEG on the server. Format, resolution and frame rate are chosen from what the device reports. Fit / 1:1 / fullscreen.                                                                       |
+| Picture   | Brightness, contrast, saturation and hue sliders with reset to the device default.                                                                                                                                                                                          |
+| Audio     | 48 kHz stereo through Web Audio with about 50–250 ms latency. Volume up to 300%, mute, channel mode (stereo, swap, mono, left, right), latency setting and level meters. Audio starts automatically; if the browser blocks autoplay, the first click on the page starts it. |
+| Recording | Server side with ffmpeg, so it keeps going when the page is closed. MP4 (H.264 + AAC) or MKV (original MJPEG + PCM). Audio and video stay in sync to within about 10 ms.                                                                                                    |
+| Snapshots | Saved as JPEG on the server.                                                                                                                                                                                                                                                |
+| Files     | Recordings and snapshots can be listed, downloaded and deleted from the page. Their folders can be changed from the page.                                                                                                                                                   |
 
 The capture device is opened only while somebody is watching or recording, so
 other programs (OBS, ffplay) can use it the rest of the time. Unplugging and
@@ -63,20 +63,20 @@ replugging is handled automatically.
 
 ### Flags
 
-| Flag | Default | Description |
-|---|---|---|
-| `--listen` | `127.0.0.1:8080` | HTTP address. Use `0.0.0.0:8080` to allow other machines on the network. |
-| `--video` | auto-detect | V4L2 device, e.g. `/dev/video0` |
-| `--audio` | auto-detect | ALSA device, or `none` to disable audio |
-| `--match` | `MS2109` | Device name used for auto-detection |
-| `--format` `--width` `--height` `--fps` | `MJPG` 1920×1080 30 | Initial video mode. Overrides the saved mode. |
-| `--quality` | `90` | JPEG quality used for YUYV |
-| `--recordings` | `~/Videos/hdmiview` | Folder for recordings. Overrides the saved folder. |
-| `--snapshots` | `~/Pictures/hdmiview` | Folder for snapshots. Overrides the saved folder. |
-| `--settings` | `~/.config/hdmiview/settings.json` | Where the video mode and folders are remembered. `""` disables saving. |
-| `--log-level` | `info` | `debug`, `info`, `warn` or `error` |
-| `--log-format` | `console` | `console` (zap development style) or `json` (zap production style) |
-| `--version` | | Print version and exit |
+| Flag                                    | Default                            | Description                                                              |
+| --------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------ |
+| `--listen`                              | `127.0.0.1:8080`                   | HTTP address. Use `0.0.0.0:8080` to allow other machines on the network. |
+| `--video`                               | auto-detect                        | V4L2 device, e.g. `/dev/video0`                                          |
+| `--audio`                               | auto-detect                        | ALSA device, or `none` to disable audio                                  |
+| `--match`                               | `MS2109`                           | Device name used for auto-detection                                      |
+| `--format` `--width` `--height` `--fps` | `MJPG` 1920×1080 30                | Initial video mode. Overrides the saved mode.                            |
+| `--quality`                             | `90`                               | JPEG quality used for YUYV                                               |
+| `--recordings`                          | `~/Videos/hdmiview`                | Folder for recordings. Overrides the saved folder.                       |
+| `--snapshots`                           | `~/Pictures/hdmiview`              | Folder for snapshots. Overrides the saved folder.                        |
+| `--settings`                            | `~/.config/hdmiview/settings.json` | Where the video mode and folders are remembered. `""` disables saving.   |
+| `--log-level`                           | `info`                             | `debug`, `info`, `warn` or `error`                                       |
+| `--log-format`                          | `console`                          | `console` (zap development style) or `json` (zap production style)       |
+| `--version`                             |                                    | Print version and exit                                                   |
 
 Audio settings (volume, channel mode, latency) are stored in the browser.
 
@@ -89,20 +89,20 @@ trust. The server only lists, serves or deletes files it created itself
 
 ### HTTP API
 
-| Method & path | Purpose |
-|---|---|
-| `GET /video` | MJPEG stream (`multipart/x-mixed-replace`) |
-| `GET /audio` | Raw PCM stream, S16LE, 48 kHz, 2 channels |
-| `GET /snapshot.jpg` | Current frame |
-| `POST /api/snapshot` | Save a snapshot to the snapshots folder |
-| `GET /api/snapshots` | List snapshots |
-| `GET`, `DELETE /snapshots/{name}` | Get (`?download=1` forces download) or delete a snapshot |
-| `GET`, `POST /api/video` | Current mode and supported modes; change the mode |
-| `GET`, `POST /api/controls` | Picture controls; set `{"id", "value"}` or `{"id", "reset": true}` |
-| `GET`, `POST /api/record` | Recording status and list; `{"action": "start", "format": "mp4"\|"mkv", "quality": "high"\|"normal"\|"small"}` or `{"action": "stop"}` |
-| `GET`, `DELETE /recordings/{name}` | Download or delete a recording |
-| `GET`, `POST /api/folders` | Recording and snapshot folders |
-| `GET /stats` | Frame rate, bitrate, audio state, viewer count |
+| Method & path                      | Purpose                                                                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /video`                       | MJPEG stream (`multipart/x-mixed-replace`)                                                                                             |
+| `GET /audio`                       | Raw PCM stream, S16LE, 48 kHz, 2 channels                                                                                              |
+| `GET /snapshot.jpg`                | Current frame                                                                                                                          |
+| `POST /api/snapshot`               | Save a snapshot to the snapshots folder                                                                                                |
+| `GET /api/snapshots`               | List snapshots                                                                                                                         |
+| `GET`, `DELETE /snapshots/{name}`  | Get (`?download=1` forces download) or delete a snapshot                                                                               |
+| `GET`, `POST /api/video`           | Current mode and supported modes; change the mode                                                                                      |
+| `GET`, `POST /api/controls`        | Picture controls; set `{"id", "value"}` or `{"id", "reset": true}`                                                                     |
+| `GET`, `POST /api/record`          | Recording status and list; `{"action": "start", "format": "mp4"\|"mkv", "quality": "high"\|"normal"\|"small"}` or `{"action": "stop"}` |
+| `GET`, `DELETE /recordings/{name}` | Download or delete a recording                                                                                                         |
+| `GET`, `POST /api/folders`         | Recording and snapshot folders                                                                                                         |
+| `GET /stats`                       | Frame rate, bitrate, audio state, viewer count                                                                                         |
 
 ## ms2109tool
 
@@ -157,14 +157,14 @@ works for another attempt. Afterwards it reads everything back to verify.
 Inspired by [MS2109-Pro](https://github.com/matiaspl/MS2109-Pro), but applied
 to your own stock image instead of a fixed upstream baseline:
 
-| Option | Default | Change |
-|---|---|---|
-| `--framerates` | on | MJPEG 1920×1080, 1600×1200, 1360×768, 1280×1024 and 1280×960 advertise the real 30/25/20/10/5 fps from the datasheet instead of a fake 60 fps. 720p and below keep 60 fps. |
-| `--stereo` | on | USB audio: stereo 48 kHz instead of mono 96 kHz |
-| `--bt709` | on | UVC colour matching descriptor declares the BT.709 matrix |
-| `--procamp` | on | Startup brightness −17, contrast 148, saturation 146, hue 0 |
-| `--name` | `MS2109-Pro` | USB product and interface name (`""` keeps stock) |
-| `--chanorder` | off | MS2109-Pro's left/right routing change (`FE60=1`). It swapped the channels on the device this was tested with. |
+| Option         | Default      | Change                                                                                                                                                                     |
+| -------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--framerates` | on           | MJPEG 1920×1080, 1600×1200, 1360×768, 1280×1024 and 1280×960 advertise the real 30/25/20/10/5 fps from the datasheet instead of a fake 60 fps. 720p and below keep 60 fps. |
+| `--stereo`     | on           | USB audio: stereo 48 kHz instead of mono 96 kHz                                                                                                                            |
+| `--bt709`      | on           | UVC colour matching descriptor declares the BT.709 matrix                                                                                                                  |
+| `--procamp`    | on           | Startup brightness −17, contrast 148, saturation 146, hue 0                                                                                                                |
+| `--name`       | `MS2109-Pro` | USB product and interface name (`""` keeps stock)                                                                                                                          |
+| `--chanorder`  | off          | MS2109-Pro's left/right routing change (`FE60=1`). It swapped the channels on the device this was tested with.                                                             |
 
 The builder refuses images that don't look like the expected stock firmware
 (hook entry, frame table) and recomputes both checksums. Tests run the
@@ -182,14 +182,14 @@ calls it from fixed hooks.
 
 EEPROM layout:
 
-| Offset | Content |
-|---|---|
-| `0x00` | Magic `A5 5A` (8-bit addressed EEPROM) or `96 69` (16-bit) |
-| `0x02` | Code length N (big endian) |
-| `0x04` | Hook enable bits |
-| `0x10`, `0x20` | Video and audio name records |
-| `0x30` | Code, N bytes |
-| `0x30+N` | 16-bit sum of bytes `0x02..0x2F`, then 16-bit sum of the code |
+| Offset         | Content                                                       |
+| -------------- | ------------------------------------------------------------- |
+| `0x00`         | Magic `A5 5A` (8-bit addressed EEPROM) or `96 69` (16-bit)    |
+| `0x02`         | Code length N (big endian)                                    |
+| `0x04`         | Hook enable bits                                              |
+| `0x10`, `0x20` | Video and audio name records                                  |
+| `0x30`         | Code, N bytes                                                 |
+| `0x30+N`       | 16-bit sum of bytes `0x02..0x2F`, then 16-bit sum of the code |
 
 HID protocol: 9-byte feature reports. `0xB5`/`0xB6` read and write XDATA,
 `0xE5`/`0xE6` read and write the EEPROM.
@@ -203,4 +203,10 @@ HID protocol: 9-byte feature reports. `0xB5`/`0xB6` read and write XDATA,
 ## Disclaimer
 
 Flashing firmware can make a device unusable. Back up first, and use this at
-your own risk. No vendor firmware is included in this repository.
+your own risk.
+
+`backups/` holds dumps from the device this was developed on: the stock EEPROM
+firmware (`original-eeprom.bin`, version 20072901), a 64 KiB XDATA RAM dump
+taken while it was running, and the EEPROM contents saved before each flash.
+The tests use them. They are only known to match that one device; always back
+up your own dongle before flashing.
