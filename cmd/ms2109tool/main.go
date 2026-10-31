@@ -25,6 +25,7 @@ commands:
   build-pro [flags] <stock.bin> <out.bin>
                                  apply the Pro-style patch to a stock image (no device needed)
   diff <a.bin> <b.bin>           list differing byte ranges (no device needed)
+  edid [--extract f] <file>      decode the EDID of a firmware image or EDID file (no device needed)
   flash [flags] <img.bin>        write image (changed bytes only) and verify
   xread <addr> <len>             hexdump XDATA RAM
   xwrite <addr> <byte>...        write XDATA RAM (live, lost on replug)
@@ -107,6 +108,9 @@ func main() {
 		return
 	case "diff":
 		cmdDiff(args)
+		return
+	case "edid":
+		cmdEDID(args)
 		return
 	}
 
@@ -430,7 +434,16 @@ func cmdBuildPro(args []string) {
 	fs.BoolVar(&o.ChannelOrder, "chanorder", def.ChannelOrder, "Pro L/R channel routing fix (FE60=1)")
 	fs.BoolVar(&o.BT709, "bt709", def.BT709, "declare BT.709 colour matrix")
 	fs.StringVar(&o.Name, "name", def.Name, "video/audio interface name (empty = keep stock)")
+	edidFile := fs.String("edid", "", "replace the EDID with this file (128 or 256 bytes)")
+	fs.StringVar(&o.EDIDPreferred, "edid-preferred", "", "make this the EDID's preferred mode: "+strings.Join(ms2109.StandardTimingNames(), ", "))
 	fs.Parse(args)
+	if *edidFile != "" {
+		e, err := os.ReadFile(*edidFile)
+		if err != nil {
+			die("%v", err)
+		}
+		o.EDID = e
+	}
 	if fs.NArg() != 2 {
 		die("build-pro [flags] <stock.bin> <out.bin>")
 	}
@@ -509,4 +522,36 @@ func cmdXwrite(dev *ms2109.Device, args []string) {
 		die("%v", err)
 	}
 	ms2109.Hexdump(os.Stdout, b, a)
+}
+
+func cmdEDID(args []string) {
+	fs := subFlags("edid", "<firmware.bin|edid.bin>")
+	extract := fs.String("extract", "", "also write the EDID to this file")
+	fs.Parse(args)
+	if fs.NArg() != 1 {
+		fs.Usage()
+		os.Exit(2)
+	}
+	data, err := os.ReadFile(fs.Arg(0))
+	if err != nil {
+		die("%v", err)
+	}
+	e := data
+	if _, perr := ms2109.ParseImage(data); perr == nil {
+		if e, err = ms2109.ImageEDID(data); err != nil {
+			die("%v", err)
+		}
+	}
+	if err := ms2109.PrintEDID(os.Stdout, fs.Arg(0), e); err != nil {
+		die("%v", err)
+	}
+	if *extract != "" {
+		if _, err := os.Stat(*extract); err == nil {
+			die("%s exists", *extract)
+		}
+		if err := os.WriteFile(*extract, e, 0o644); err != nil {
+			die("%v", err)
+		}
+		fmt.Printf("EDID written to %s (%d bytes)\n", *extract, len(e))
+	}
 }

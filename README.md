@@ -158,6 +158,7 @@ usage: ms2109tool [--dev /dev/hidrawN] [--verbose] <command> [args]
   build-pro [flags] <stock.bin> <out.bin>
                                  apply the Pro-style patch to a stock image
   diff <a.bin> <b.bin>           list differing byte ranges
+  edid [--extract f] <file>      decode the EDID of a firmware image or EDID file
   flash [flags] <img.bin>        write image (changed bytes only) and verify
   xread <addr> <len>             hexdump XDATA RAM
   xwrite <addr> <byte>...        write XDATA RAM (live, lost on replug)
@@ -199,14 +200,16 @@ works for another attempt. Afterwards it reads everything back to verify.
 Inspired by [MS2109-Pro](https://github.com/matiaspl/MS2109-Pro), but applied
 to your own stock image instead of a fixed upstream baseline:
 
-| Option         | Default      | Change                                                                                                                                                                     |
-| -------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--framerates` | on           | MJPEG 1920×1080, 1600×1200, 1360×768, 1280×1024 and 1280×960 advertise the real 30/25/20/10/5 fps from the datasheet instead of a fake 60 fps. 720p and below keep 60 fps. |
-| `--stereo`     | on           | USB audio: stereo 48 kHz instead of mono 96 kHz                                                                                                                            |
-| `--bt709`      | on           | UVC colour matching descriptor declares the BT.709 matrix                                                                                                                  |
-| `--procamp`    | on           | Startup brightness −17, contrast 148, saturation 146, hue 0                                                                                                                |
-| `--name`       | `MS2109-Pro` | USB product and interface name (`""` keeps stock)                                                                                                                          |
-| `--chanorder`  | off          | MS2109-Pro's left/right routing change (`FE60=1`). It swapped the channels on the device this was tested with.                                                             |
+| Option             | Default      | Change                                                                                                                                                                     |
+| ------------------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--framerates`     | on           | MJPEG 1920×1080, 1600×1200, 1360×768, 1280×1024 and 1280×960 advertise the real 30/25/20/10/5 fps from the datasheet instead of a fake 60 fps. 720p and below keep 60 fps. |
+| `--stereo`         | on           | USB audio: stereo 48 kHz instead of mono 96 kHz                                                                                                                            |
+| `--bt709`          | on           | UVC colour matching descriptor declares the BT.709 matrix                                                                                                                  |
+| `--procamp`        | on           | Startup brightness −17, contrast 148, saturation 146, hue 0                                                                                                                |
+| `--name`           | `MS2109-Pro` | USB product and interface name (`""` keeps stock)                                                                                                                          |
+| `--chanorder`      | off          | MS2109-Pro's left/right routing change (`FE60=1`). It swapped the channels on the device this was tested with.                                                             |
+| `--edid`           | keep         | Replace the EDID with a 128 or 256 byte file                                                                                                                               |
+| `--edid-preferred` | keep         | Make a standard mode the EDID's preferred mode: `1080p60`, `1080p50`, `1080p30`, `1080p25`, `720p60`, `720p50`                                                             |
 
 The builder refuses images that don't look like the expected stock firmware
 (hook entry, frame table) and recomputes both checksums. Tests run the
@@ -216,6 +219,64 @@ The MS2109 cannot output more than **1920×1080 at 30 fps** (see the
 [datasheet](docs/MS2109-datasheet.pdf), in Chinese, section 6.4). That is a hardware
 limit, so no firmware can add 1080p60 output.
 
+### Custom EDID
+
+The EDID is the data an HDMI source reads to decide what to send. The stock
+EDID lives inside the firmware (EEPROM offset `0x182`, 256 bytes, enabled by
+bit 4 of header byte 5). It calls itself "HDMI TO USB" and prefers
+**1920×1080 at 60 Hz**, so most sources send 1080p60, which the chip can only
+deliver at 30 fps.
+
+Changing the preferred mode makes the source send what is actually captured:
+
+```sh
+./bin/ms2109tool edid backups/original-eeprom.bin            # show the current EDID
+./bin/ms2109tool build-pro --edid-preferred 720p60 \
+    backups/original-eeprom.bin firmware/ms2109-pro-720p60.bin
+./bin/ms2109tool edid firmware/ms2109-pro-720p60.bin         # check before flashing
+```
+
+- `720p60`: the source sends 720p60, captured at a real 60 fps.
+- `1080p30`: full resolution without frame-rate conversion in the chip.
+
+Only the preferred timing changes; every other supported mode stays listed, so
+the source can still be switched to them. To use a completely different EDID,
+pass `--edid file.bin` (128 or 256 bytes; keep the CEA-861 extension block, or
+HDMI sources fall back to DVI mode without audio). `ms2109tool edid --extract`
+saves an EDID for editing.
+
+After flashing, replug the dongle, then replug the HDMI cable or restart the
+source so it reads the new EDID. On Linux sources, check with
+`cat /sys/class/drm/*HDMI*/modes`.
+
+### Recovery
+
+| Situation                                                      | What to do                                                                                                                              |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| New firmware works badly, but the dongle still shows up on USB | `./bin/ms2109tool flash backups/original-eeprom.bin`, then replug                                                                       |
+| A flash was interrupted                                        | `flash` invalidates the image header first, so the chip boots from its mask ROM only. The HID interface still works: run `flash` again. |
+| The dongle no longer shows up on USB                           | Reprogram the EEPROM directly, see below                                                                                                |
+
+The firmware lives in a **24C16** I²C EEPROM (2 KiB, SOIC-8, I²C addresses
+`0x50` to `0x57`) next to the MS2109. Standard 24Cxx pinout: 4 GND, 5 SDA,
+6 SCL, 7 WP, 8 VCC (pins 1 to 3 are unused on a 24C16).
+
+**In circuit**, with a SOIC-8 test clip and a programmer that can run at 2.5 V
+(e.g. Bus Pirate 5):
+
+1. Unplug the dongle's USB cable.
+2. Power the EEPROM at **2.5 V**. At 3.3 V the MS2109 is back-powered through
+   the board and disturbs the I²C bus.
+3. Tie **WP (pin 7) to ground**. The MS2109 normally drives it (GPIO5).
+4. Write your 2048-byte backup (e.g. `backups/original-eeprom.bin`) as a 24C16
+   and read it back to verify.
+
+**Off board**: desolder the EEPROM, program it with any 24Cxx programmer (for
+example a CH341A-based one at 3.3 V), verify, and solder it back.
+
+These steps follow the recovery notes of
+[kraln/macrosilicon_firmware](https://github.com/kraln/macrosilicon_firmware).
+
 ### How the firmware works
 
 The MS2109 has an 8051 core that runs from mask ROM. At boot the ROM copies
@@ -224,14 +285,15 @@ calls it from fixed hooks.
 
 EEPROM layout:
 
-| Offset         | Content                                                       |
-| -------------- | ------------------------------------------------------------- |
-| `0x00`         | Magic `A5 5A` (8-bit addressed EEPROM) or `96 69` (16-bit)    |
-| `0x02`         | Code length N (big endian)                                    |
-| `0x04`         | Hook enable bits                                              |
-| `0x10`, `0x20` | Video and audio name records                                  |
-| `0x30`         | Code, N bytes                                                 |
-| `0x30+N`       | 16-bit sum of bytes `0x02..0x2F`, then 16-bit sum of the code |
+| Offset         | Content                                                                      |
+| -------------- | ---------------------------------------------------------------------------- |
+| `0x00`         | Magic `A5 5A` (8-bit addressed EEPROM) or `96 69` (16-bit)                   |
+| `0x02`         | Code length N (big endian)                                                   |
+| `0x04`         | Hook enable bits                                                             |
+| `0x05`         | Bit 4: use the EDID from the firmware instead of the ROM's                   |
+| `0x10`, `0x20` | Video and audio name records                                                 |
+| `0x30`         | Code, N bytes, loaded to XDATA `0xCC00` (the EDID is at code offset `0x152`) |
+| `0x30+N`       | 16-bit sum of bytes `0x02..0x2F`, then 16-bit sum of the code                |
 
 HID protocol: 9-byte feature reports. `0xB5`/`0xB6` read and write XDATA,
 `0xE5`/`0xE6` read and write the EEPROM.
@@ -241,6 +303,7 @@ HID protocol: 9-byte feature reports. `0xB5`/`0xB6` read and write XDATA,
 - [BertoldVdb/ms-tools](https://github.com/BertoldVdb/ms-tools): the MS2109 HID protocol and memory map
 - [matiaspl/MS2109-Pro](https://github.com/matiaspl/MS2109-Pro): the firmware improvements `build-pro` is based on
 - [Forest178/ms21xx-firmware-research](https://github.com/Forest178/ms21xx-firmware-research): EEPROM layout and checksums
+- [kraln/macrosilicon_firmware](https://github.com/kraln/macrosilicon_firmware): EDID location and EEPROM recovery notes
 
 ## Disclaimer
 

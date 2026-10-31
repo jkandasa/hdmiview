@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"strings"
 )
 
 // Pro-style patch for the stock MS2109 EEPROM firmware (ported from the
@@ -21,6 +22,9 @@ type ProOptions struct {
 	ChannelOrder bool   // FE60=1 L/R routing fix from MS2109-Pro
 	BT709        bool   // UVC colour matching: BT.709 matrix
 	Name         string // video/audio interface name in EEPROM header, "" = keep
+
+	EDID          []byte // replacement EDID (128 or 256 bytes), nil = keep
+	EDIDPreferred string // name in StandardTimings to make the preferred mode, "" = keep
 }
 
 func DefaultProOptions() ProOptions {
@@ -107,6 +111,38 @@ func BuildPro(stock []byte, opt ProOptions) ([]byte, []ProChange, error) {
 		copy(img[0x10:], rec) // video interface name
 		copy(img[0x20:], rec) // audio interface name
 		changes = append(changes, ProChange{fmt.Sprintf("header video/audio name %q", opt.Name), 0x10, 32})
+	}
+
+	if opt.EDID != nil || opt.EDIDPreferred != "" {
+		cur, err := ImageEDID(img)
+		if err != nil {
+			return nil, nil, err
+		}
+		e := bytes.Clone(cur)
+		var what []string
+		if opt.EDID != nil {
+			if err := ValidateEDID(opt.EDID); err != nil {
+				return nil, nil, fmt.Errorf("--edid: %w", err)
+			}
+			clear(e)
+			copy(e, opt.EDID)
+			what = append(what, fmt.Sprintf("replaced (%d bytes)", len(opt.EDID)))
+			if opt.EDID[126] == 0 {
+				what = append(what, "WARNING: no CEA-861 extension, HDMI sources may switch to DVI mode without audio")
+			}
+		}
+		if opt.EDIDPreferred != "" {
+			t, ok := StandardTimings[opt.EDIDPreferred]
+			if !ok {
+				return nil, nil, fmt.Errorf("unknown preferred mode %q (use one of %s)", opt.EDIDPreferred, strings.Join(StandardTimingNames(), ", "))
+			}
+			if err := SetPreferredTiming(e, t); err != nil {
+				return nil, nil, err
+			}
+			what = append(what, "preferred mode "+t.String())
+		}
+		copy(img[EDIDOffset:], e)
+		changes = append(changes, ProChange{"EDID: " + strings.Join(what, "; "), EDIDOffset, EDIDLen})
 	}
 
 	// Hook code appended after the stock code.
