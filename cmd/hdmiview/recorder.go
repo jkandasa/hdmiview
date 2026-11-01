@@ -120,13 +120,13 @@ func stampedFeed(h *hub, n int, stop <-chan struct{}) <-chan stamped {
 	return out
 }
 
-func (r *recorder) start(format, quality, codec string, withAudio bool, fps int) (string, error) {
+func (r *recorder) start(format, quality, codec, encoderMode string, withAudio bool, fps int) (string, error) {
 	if codec == "" {
 		codec = "h265"
 	}
-	enc, ok := r.encoder.get(codec)
-	if !ok {
-		return "", fmt.Errorf("unknown codec %q (use h264 or h265)", codec)
+	enc, err := r.encoder.get(codec, encoderMode)
+	if err != nil {
+		return "", err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -118,18 +119,22 @@ func probeEncoder(ffmpeg string, enc videoEncoder) bool {
 	return exec.CommandContext(ctx, ffmpeg, args...).Run() == nil
 }
 
-// encoderPicker detects, once and in the background, the encoder to use
-// for each codec: the first working GPU encoder, else software.
+// encoderPicker detects, once and in the background, the GPU encoder that
+// works for each codec (if any). Software encoders are always available.
 type encoderPicker struct {
 	done chan struct{}
-	encs map[string]videoEncoder
+	gpu  map[string]videoEncoder // codec -> first working GPU encoder
 }
 
+// Encoder modes.
+const (
+	encoderAuto     = "auto"     // GPU when available, else software
+	encoderHardware = "hardware" // GPU only
+	encoderSoftware = "software" // CPU only
+)
+
 func newEncoderPicker(ffmpeg string) *encoderPicker {
-	p := &encoderPicker{done: make(chan struct{}), encs: map[string]videoEncoder{}}
-	for c, e := range softwareEncoders {
-		p.encs[c] = e
-	}
+	p := &encoderPicker{done: make(chan struct{}), gpu: map[string]videoEncoder{}}
 	if ffmpeg == "" {
 		close(p.done)
 		return p
@@ -139,31 +144,63 @@ func newEncoderPicker(ffmpeg string) *encoderPicker {
 		for _, codec := range []string{"h265", "h264"} {
 			for _, e := range gpuEncoders(codec) {
 				if probeEncoder(ffmpeg, e) {
-					p.encs[codec] = e
+					p.gpu[codec] = e
 					break
 				}
 			}
-			e := p.encs[codec]
-			slog.Info("recording encoder", "codec", codecNames[codec], "encoder", e.Name, "gpu", e.GPU)
+			e, ok := p.gpu[codec]
+			slog.Info("recording encoders", "codec", codecNames[codec], "gpu", ok, "gpuEncoder", e.Name, "software", softwareEncoders[codec].Name)
 		}
 	}()
 	return p
 }
 
-// get waits for detection and returns the encoder for codec.
-func (p *encoderPicker) get(codec string) (videoEncoder, bool) {
+// get waits for detection and returns the encoder for codec and mode.
+func (p *encoderPicker) get(codec, mode string) (videoEncoder, error) {
+	sw, ok := softwareEncoders[codec]
+	if !ok {
+		return videoEncoder{}, fmt.Errorf("unknown codec %q (use h264 or h265)", codec)
+	}
 	<-p.done
-	e, ok := p.encs[codec]
-	return e, ok
+	gpu, hasGPU := p.gpu[codec]
+	switch mode {
+	case "", encoderAuto:
+		if hasGPU {
+			return gpu, nil
+		}
+		return sw, nil
+	case encoderHardware:
+		if !hasGPU {
+			return videoEncoder{}, fmt.Errorf("no working GPU encoder for %s on this system", codecNames[codec])
+		}
+		return gpu, nil
+	case encoderSoftware:
+		return sw, nil
+	}
+	return videoEncoder{}, fmt.Errorf("unknown encoder mode %q (use auto, hardware or software)", mode)
+}
+
+// encoderChoice describes, per codec, what each mode would use.
+type encoderChoice struct {
+	GPU      *videoEncoder `json:"gpu"` // nil: no working GPU encoder
+	Software videoEncoder  `json:"software"`
 }
 
 // all returns the detected encoders without waiting ("ready" is false while
 // detection is still running).
-func (p *encoderPicker) all() (map[string]videoEncoder, bool) {
+func (p *encoderPicker) all() (map[string]encoderChoice, bool) {
 	select {
 	case <-p.done:
-		return p.encs, true
 	default:
 		return nil, false
 	}
+	out := map[string]encoderChoice{}
+	for codec, sw := range softwareEncoders {
+		c := encoderChoice{Software: sw}
+		if g, ok := p.gpu[codec]; ok {
+			c.GPU = &g
+		}
+		out[codec] = c
+	}
+	return out, true
 }

@@ -560,7 +560,8 @@ func main() {
 			Format  string `json:"format"`
 			Quality string `json:"quality"`
 			Codec   string `json:"codec"`
-			Audio   *bool  `json:"audio"` // default true
+			Encoder string `json:"encoder"` // auto (default), hardware or software
+			Audio   *bool  `json:"audio"`   // default true
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -570,7 +571,7 @@ func main() {
 		switch req.Action {
 		case "start":
 			mode, _ := st.get()
-			_, err = rec.start(req.Format, req.Quality, req.Codec, req.Audio == nil || *req.Audio, mode.FPS)
+			_, err = rec.start(req.Format, req.Quality, req.Codec, req.Encoder, req.Audio == nil || *req.Audio, mode.FPS)
 		case "stop":
 			err = rec.stopRecording()
 		default:

@@ -114,6 +114,12 @@
         <option value="h265">H.265 (smaller)</option>
         <option value="h264">H.264 (plays everywhere)</option>
       </select><span></span></div>
+    <div class="row"><label for="recEnc">Encoder</label>
+      <select id="recEnc">
+        <option value="auto">Auto</option>
+        <option value="hardware">Hardware (GPU)</option>
+        <option value="software">Software (CPU)</option>
+      </select><span></span></div>
     <div class="row" id="recQualRow"><label for="recQual">Quality</label>
       <select id="recQual">
         <option value="high">High (larger)</option>
@@ -453,9 +459,25 @@ if (prefs.enabled) startAudio(); else updateAudioBtn();
 })();
 
 // ---------------- recording ----------------
-const recPrefs = Object.assign({ format: "mp4", quality: "normal", codec: "h265", audio: true }, JSON.parse(localStorage.getItem("hdmiview.rec") || "{}"));
+const recPrefs = Object.assign({ format: "mp4", quality: "normal", codec: "h265", encoder: "auto", audio: true }, JSON.parse(localStorage.getItem("hdmiview.rec") || "{}"));
 const saveRecPrefs = () => localStorage.setItem("hdmiview.rec", JSON.stringify(recPrefs));
 const encLabel = e => e ? `${e.gpu ? "GPU" : "software"}, ${e.name}` : "";
+let recEncoders = null;   // per codec: { gpu: encoder or null, software: encoder }
+
+// Name the encoder each mode would use for the selected codec.
+function encoderOptions() {
+  const c = recEncoders?.[$("recCodec").value];
+  for (const opt of $("recEnc").options) {
+    if (!c) continue;
+    if (opt.value === "auto") opt.textContent = `Auto (${encLabel(c.gpu || c.software)})`;
+    if (opt.value === "hardware") {
+      opt.textContent = c.gpu ? `Hardware (${c.gpu.name})` : "Hardware (not available)";
+      opt.disabled = !c.gpu;
+    }
+    if (opt.value === "software") opt.textContent = `Software (${c.software.name})`;
+  }
+  if ($("recEnc").selectedOptions[0]?.disabled) $("recEnc").value = "auto";
+}
 const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e3) + " kB";
 const fmtTime = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(v => String(v).padStart(2, "0")).join(":");
 let recState = null;
@@ -470,16 +492,11 @@ function renderRec(st) {
 
   if ($("recFmt").options.length === 0 && st.formats) {
     for (const k of ["mp4", "mkv"]) if (st.formats[k]) $("recFmt").add(new Option(st.formats[k], k));
-    $("recFmt").value = recPrefs.format; $("recQual").value = recPrefs.quality; $("recCodec").value = recPrefs.codec; $("recAudio").checked = recPrefs.audio;
+    $("recFmt").value = recPrefs.format; $("recQual").value = recPrefs.quality; $("recCodec").value = recPrefs.codec; $("recEnc").value = recPrefs.encoder; $("recAudio").checked = recPrefs.audio;
     recFormUI();
   }
-  $("recFmt").disabled = $("recQual").disabled = $("recCodec").disabled = $("recAudio").disabled = st.active;
-  if (st.encoders) {   // name the encoder each codec will use
-    for (const opt of $("recCodec").options) {
-      const e = st.encoders[opt.value], base = opt.value === "h265" ? "H.265 (smaller)" : "H.264 (plays everywhere)";
-      opt.textContent = e ? `${base}: ${encLabel(e)}` : base;
-    }
-  }
+  $("recFmt").disabled = $("recQual").disabled = $("recCodec").disabled = $("recEnc").disabled = $("recAudio").disabled = st.active;
+  if (st.encoders) { recEncoders = st.encoders; encoderOptions(); }
   if (st.error) setMsg("recMsg", st.error, true);
   else if (st.active && !st.frames && st.seconds >= 3) setMsg("recMsg", "Recording, but waiting for video: is the capture device in use by another program?", true);
   else setMsg("recMsg", st.active ? `Recording ${st.file} (${st.encoder?.codec === "h264" ? "H.264" : "H.265"}, ${encLabel(st.encoder)}). It continues if you close this page.` : `Saved to ${st.dir} on the server.`);
@@ -517,12 +534,13 @@ function recFormUI() {
     ($("recCodec").value === "h265"
       ? "H.265: smallest files; needs a recent player (VLC, mpv, browsers with HEVC support). "
       : "H.264: slightly larger files; plays on practically everything. ") +
-    "Encoded on the GPU when available, otherwise on the CPU. A static screen costs almost nothing. " +
+    "Auto uses the GPU when available, otherwise the CPU. A static screen costs almost nothing. " +
     "Audio bitrate follows the quality: " + (mp4 ? "160 / 128 / 96" : "128 / 96 / 64") + " kbit/s.";
 }
 $("recFmt").onchange = () => { recPrefs.format = $("recFmt").value; saveRecPrefs(); recFormUI(); };
 $("recQual").onchange = () => { recPrefs.quality = $("recQual").value; saveRecPrefs(); };
-$("recCodec").onchange = () => { recPrefs.codec = $("recCodec").value; saveRecPrefs(); recFormUI(); };
+$("recCodec").onchange = () => { recPrefs.codec = $("recCodec").value; saveRecPrefs(); encoderOptions(); recFormUI(); };
+$("recEnc").onchange = () => { recPrefs.encoder = $("recEnc").value; saveRecPrefs(); };
 $("recAudio").onchange = () => { recPrefs.audio = $("recAudio").checked; saveRecPrefs(); };
 
 async function pollRec() {
@@ -532,7 +550,7 @@ async function pollRec() {
 $("recBtn").onclick = async () => {
   $("recBtn").disabled = true;
   try {
-    const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality, codec: recPrefs.codec, audio: recPrefs.audio };
+    const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality, codec: recPrefs.codec, encoder: $("recEnc").value, audio: recPrefs.audio };
     await api("/api/record", body);
   } catch (e) { alert("Recording: " + e.message); }
   await pollRec();

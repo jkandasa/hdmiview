@@ -88,12 +88,16 @@ func TestRecorderSync(t *testing.T) {
 			if c.inputs == "stdin+tcp" { // the Windows input path
 				rec.inputs = newStdinTCPInputs
 			}
+			mode := encoderAuto
 			if c.software {
-				rec.encoder = newEncoderPicker("") // software only, no probing
+				mode = encoderSoftware
 			}
-			enc, _ := rec.encoder.get(c.codec)
+			enc, err := rec.encoder.get(c.codec, mode)
+			if err != nil {
+				t.Fatal(err)
+			}
 			t.Logf("encoder %s (gpu %v)", enc.Name, enc.GPU)
-			name, err := rec.start(format, "normal", c.codec, true, 30)
+			name, err := rec.start(format, "normal", c.codec, mode, true, 30)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,8 +170,7 @@ func TestRecorderAudioOptions(t *testing.T) {
 		dir := t.TempDir()
 		video, audio := newHub(1), newHub(50)
 		rec := newRecorder(newFileStore(dir, ".mp4", ".mkv"), video, audio)
-		rec.encoder = newEncoderPicker("") // software, no probing
-		name, err := rec.start(c.format, c.quality, "h264", c.audio, 30)
+		name, err := rec.start(c.format, c.quality, "h264", encoderSoftware, c.audio, 30)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -201,5 +204,36 @@ func TestRecorderAudioOptions(t *testing.T) {
 	}
 	if got := recordFormats["mp4"].audio("high"); strings.Join(got, " ") != "-c:a aac -b:a 160k" {
 		t.Errorf("mp4 high audio = %v", got)
+	}
+}
+
+func TestEncoderModes(t *testing.T) {
+	p := newEncoderPicker("") // no ffmpeg: no GPU encoders
+	for _, c := range []struct {
+		codec, mode, want string
+		fail              bool
+	}{
+		{"h265", encoderAuto, "libx265", false},
+		{"h264", "", "libx264", false},
+		{"h265", encoderSoftware, "libx265", false},
+		{"h265", encoderHardware, "", true},
+		{"h264", "turbo", "", true},
+		{"vp9", encoderAuto, "", true},
+	} {
+		e, err := p.get(c.codec, c.mode)
+		if (err != nil) != c.fail || e.Name != c.want {
+			t.Errorf("get(%q, %q) = %q, %v", c.codec, c.mode, e.Name, err)
+		}
+	}
+	p.gpu["h265"] = videoEncoder{Name: "hevc_test", Codec: "h265", GPU: true}
+	if e, _ := p.get("h265", encoderAuto); e.Name != "hevc_test" {
+		t.Errorf("auto with GPU = %q", e.Name)
+	}
+	if e, _ := p.get("h265", encoderSoftware); e.Name != "libx265" {
+		t.Errorf("software with GPU = %q", e.Name)
+	}
+	all, ready := p.all()
+	if !ready || all["h265"].GPU == nil || all["h264"].GPU != nil {
+		t.Errorf("all() = %+v, %v", all, ready)
 	}
 }
