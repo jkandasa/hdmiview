@@ -12,6 +12,8 @@
   button.on { background: #2d5a2d; border-color: #3c7a3c; }
   select { padding: 3px 6px; }
   #bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: #1c1c1c; flex-wrap: wrap; }
+  #volPct { min-width: 3.2em; color: #aaa; font-variant-numeric: tabular-nums; }
+  #volPct.muted { text-decoration: line-through; color: #777; }
   #stats { margin-left: auto; font-variant-numeric: tabular-nums; color: #999; }
   #main { flex: 1; min-height: 0; display: flex; }
   /* Fit: the image box fills the whole area and object-fit scales the
@@ -65,6 +67,7 @@
   <button id="audioBtn">Audio</button>
   <button id="muteBtn" title="Mute">🔊</button>
   <input id="vol" type="range" min="0" max="3" step="0.05" value="1" title="Volume">
+  <span id="volPct" title="Volume"></span>
   <button id="sizeBtn" title="Show the video at its actual size">1:1</button>
   <button id="fsBtn">Fullscreen</button>
   <button id="snapBtn" title="Save a snapshot to the snapshots folder on the server">Snapshot</button>
@@ -432,7 +435,8 @@ function stopAudio() {
 
 function syncAudioUI() {
   $("vol").value = $("vol2").value = prefs.volume;
-  $("volVal").textContent = Math.round(prefs.volume * 100) + "%";
+  $("volVal").textContent = $("volPct").textContent = Math.round(prefs.volume * 100) + "%";
+  $("volPct").classList.toggle("muted", prefs.muted);
   $("muteBtn").textContent = prefs.muted ? "🔇" : "🔊";
   $("muteBtn").classList.toggle("on", prefs.muted);
   $("chan").value = prefs.channels;
