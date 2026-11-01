@@ -14,7 +14,8 @@
   #bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: #1c1c1c; flex-wrap: wrap; }
   #volPct { min-width: 3.2em; color: #aaa; font-variant-numeric: tabular-nums; }
   #volPct.muted { text-decoration: line-through; color: #777; }
-  #volPct.off, #volVal.off { opacity: .4; }
+  #volPct.off, #volVal.off, .audioDep.off { opacity: .4; }
+  select:disabled { opacity: .5; cursor: default; }
   input[type=range]:disabled { opacity: .4; }
   #stats { margin-left: auto; font-variant-numeric: tabular-nums; color: #999; }
   #main { flex: 1; min-height: 0; display: flex; }
@@ -95,6 +96,7 @@
     <div class="msg" id="ctrlMsg"></div>
 
     <h3>Audio</h3>
+    <div class="row"><label for="audioOn">Audio</label><label><input id="audioOn" type="checkbox"> play in this browser</label><span></span></div>
     <div class="row"><label for="chan">Channels</label>
       <select id="chan">
         <option value="stereo">Stereo</option>
@@ -110,8 +112,8 @@
         <option value="high">Smooth (~250 ms)</option>
       </select><span></span></div>
     <div class="row"><label for="vol2">Volume</label><input id="vol2" type="range" min="0" max="3" step="0.05"><span class="val" id="volVal"></span></div>
-    <div class="row"><span>Level L</span><div class="meter"><div id="meterL"></div></div><span></span></div>
-    <div class="row"><span>Level R</span><div class="meter"><div id="meterR"></div></div><span></span></div>
+    <div class="row audioDep"><span>Level L</span><div class="meter"><div id="meterL"></div></div><span></span></div>
+    <div class="row audioDep"><span>Level R</span><div class="meter"><div id="meterR"></div></div><span></span></div>
     <div class="hint">Audio format is fixed by the firmware: 48 kHz stereo 16-bit. Audio settings are stored in this browser.</div>
 
     <h3>Recording</h3>
@@ -428,7 +430,9 @@ function updateAudioBtn() {
   b.classList.toggle("on", !!ctx && !waiting);
   b.title = waiting ? "The browser blocks sound until you interact with the page. Allow sound for this site to skip this." : "Turn audio on/off";
   // volume controls only make sense while audio is on
-  $("muteBtn").disabled = $("vol").disabled = $("vol2").disabled = !ctx;
+  $("muteBtn").disabled = $("vol").disabled = $("vol2").disabled = $("chan").disabled = $("lat").disabled = !ctx;
+  $("audioOn").checked = !!ctx;
+  for (const r of document.querySelectorAll(".audioDep")) r.classList.toggle("off", !ctx);
   $("volPct").classList.toggle("off", !ctx);
   $("volVal").classList.toggle("off", !ctx);
 }
@@ -450,11 +454,16 @@ function syncAudioUI() {
 }
 function setVolume(v) { prefs.volume = +v; prefs.muted = false; applyGain(); syncAudioUI(); savePrefs(); }
 
+function setAudio(on) {
+  if (on === !!ctx) return;
+  prefs.enabled = on; savePrefs();
+  on ? startAudio() : stopAudio();
+}
 $("audioBtn").onclick = () => {
   if (ctx && ctx.state === "suspended") return;   // this click resumes it (see startAudio)
-  prefs.enabled = !ctx; savePrefs();
-  prefs.enabled ? startAudio() : stopAudio();
+  setAudio(!ctx);
 };
+$("audioOn").onchange = () => setAudio($("audioOn").checked);
 $("vol").oninput = () => setVolume($("vol").value);
 $("vol2").oninput = () => setVolume($("vol2").value);
 $("muteBtn").onclick = () => { prefs.muted = !prefs.muted; applyGain(); syncAudioUI(); savePrefs(); };
