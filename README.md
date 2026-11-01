@@ -171,7 +171,7 @@ in 2 second fragments and stay playable if recording is interrupted.
 | `--recordings`                          | `~/Videos/hdmiview`                | Folder for recordings. Overrides the saved folder.                                   |
 | `--snapshots`                           | `~/Pictures/hdmiview`              | Folder for snapshots. Overrides the saved folder.                                    |
 | `--settings`                            | `~/.config/hdmiview/settings.json` | Where the video mode and folders are remembered. `""` disables saving.               |
-| `--log-level`                           | `info`                             | `debug`, `info`, `warn` or `error`                                                   |
+| `--log-level`                           | `warn`                             | `debug`, `info`, `warn` or `error`. The startup URL and "device found" always show   |
 | `--log-format`                          | `console`                          | `console` (zap development style) or `json` (zap production style)                   |
 | `--version`                             |                                    | Print version and exit                                                               |
 

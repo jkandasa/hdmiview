@@ -98,10 +98,19 @@ func (h *hub) waitActive() {
 	}
 }
 
+var retryInterval = time.Second // variable for tests
+
 // runWhileWatched runs the source while there are subscribers, retrying
-// after errors (e.g. device unplugged). run must return once stop closes;
-// it may also return nil early to be restarted (e.g. settings changed).
-func runWhileWatched(name string, h *hub, run func(stop <-chan struct{}) error) {
+// after errors (e.g. device unplugged or busy). run must return once stop
+// closes; it may also return nil early to be restarted (e.g. settings
+// changed). run calls started once data actually flows.
+//
+// Logging stays quiet while retrying: a failure is logged once (again only
+// if the error changes), and recovery is logged as "device found".
+func runWhileWatched(name string, h *hub, run func(stop <-chan struct{}, started func(attrs ...any)) error) {
+	var failing bool
+	var failSince time.Time
+	var lastErr string
 	for {
 		h.waitActive()
 		stop, done := make(chan struct{}), make(chan struct{})
@@ -120,12 +129,33 @@ func runWhileWatched(name string, h *hub, run func(stop <-chan struct{}) error) 
 				}
 			}
 		}()
-		err := run(stop)
+		var once sync.Once
+		started := func(attrs ...any) {
+			once.Do(func() {
+				if failing {
+					attrs = append(attrs, "unavailableFor", time.Since(failSince).Round(time.Second).String())
+					announce(name+" device found", attrs...)
+					failing, lastErr = false, ""
+				} else {
+					slog.Info(name+" capture started", attrs...)
+				}
+			})
+		}
+		err := run(stop, started)
 		close(done)
-		if err != nil {
-			slog.Warn("capture failed, retrying", "source", name, "error", err)
-			time.Sleep(2 * time.Second)
-		} else if h.count() == 0 {
+		switch {
+		case err != nil:
+			if msg := err.Error(); !failing || msg != lastErr {
+				if !failing {
+					failSince = time.Now()
+				}
+				slog.Warn(name+" device not available, retrying", "error", err, "retryEvery", retryInterval.String())
+				failing, lastErr = true, msg
+			} else {
+				slog.Debug(name+" device still not available", "error", err)
+			}
+			time.Sleep(retryInterval)
+		case h.count() == 0:
 			slog.Info("no viewers, device released", "source", name)
 		}
 	}
@@ -180,7 +210,7 @@ func main() {
 	settingsPath := flag.String("settings", defaultSettingsPath(), "file to remember the video mode (\"\" = don't save)")
 	recordDir := flag.String("recordings", "", "folder for recordings (default: saved setting or ~/Videos/hdmiview)")
 	snapDir := flag.String("snapshots", "", "folder for snapshots (default: saved setting or ~/Pictures/hdmiview)")
-	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
+	logLevel := flag.String("log-level", "warn", "log level: debug, info, warn, error")
 	logFormat := flag.String("log-format", "console", "log format: console (zap development style) or json (zap production style)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {
@@ -244,7 +274,7 @@ func main() {
 	}
 	rec := newRecorder(recStore, video, recAudio)
 
-	go runWhileWatched("video", video, func(stop <-chan struct{}) error {
+	go runWhileWatched("video", video, func(stop <-chan struct{}, started func(attrs ...any)) error {
 		dev, err := devicePath()
 		if err != nil {
 			return err
@@ -274,17 +304,37 @@ func main() {
 				return err
 			}
 			if frame != nil {
+				started("device", dev, "format", mode.Format, "width", mode.Width, "height", mode.Height, "fps", mode.FPS)
 				video.publish(frame)
 			}
 		}
 	})
 
 	if *audioDev != "none" {
-		go runWhileWatched("audio", audio, func(stop <-chan struct{}) error {
+		go runWhileWatched("audio", audio, func(stop <-chan struct{}, started func(attrs ...any)) error {
 			dev, err := be.audioDevice()
 			if err != nil {
 				return err
 			}
+			// report "started" once the first audio chunk arrives
+			before := audio.counter.Load()
+			watching := make(chan struct{})
+			defer close(watching)
+			go func() {
+				t := time.NewTicker(100 * time.Millisecond)
+				defer t.Stop()
+				for {
+					select {
+					case <-watching:
+						return
+					case <-t.C:
+						if audio.counter.Load() > before {
+							started("device", dev, "rate", audioRate, "channels", audioChannels)
+							return
+						}
+					}
+				}
+			}()
 			return be.runAudio(dev, audio, stop)
 		})
 	}
@@ -659,7 +709,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	slog.Info("hdmiview listening", "version", cli.ShortVersion(), "url", "http://"+*listen+"/", "recordings", recStore.Dir(), "snapshots", snapStore.Dir())
+	announce("hdmiview listening", "version", cli.ShortVersion(), "url", "http://"+*listen+"/", "recordings", recStore.Dir(), "snapshots", snapStore.Dir())
 	srv := &http.Server{
 		Addr:              *listen,
 		Handler:           guard(http.DefaultServeMux),

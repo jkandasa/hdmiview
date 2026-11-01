@@ -39,7 +39,8 @@ func runAudioUntil(device string, hub *hub, stop <-chan struct{}) error {
 	cmd := exec.Command("arecord", "-q", "-D", device, "-f", "S16_LE",
 		"-c", fmt.Sprint(audioChannels), "-r", fmt.Sprint(audioRate),
 		"-t", "raw", "--buffer-time=100000", "--period-time=10000")
-	cmd.Stderr = os.Stderr
+	stderr := &tailBuffer{max: 1024}
+	cmd.Stderr = stderr
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -47,7 +48,7 @@ func runAudioUntil(device string, hub *hub, stop <-chan struct{}) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	slog.Info("audio capture started", "device", device, "format", "S16_LE", "rate", audioRate, "channels", audioChannels)
+	slog.Debug("arecord started", "device", device)
 
 	var killed atomic.Bool
 	exited := make(chan struct{})
@@ -67,6 +68,9 @@ func runAudioUntil(device string, hub *hub, stop <-chan struct{}) error {
 			cmd.Wait()
 			if killed.Load() {
 				return nil
+			}
+			if msg := lastLine(strings.TrimSpace(stderr.String())); msg != "" {
+				return fmt.Errorf("%s", msg)
 			}
 			return fmt.Errorf("arecord: %w", err)
 		}

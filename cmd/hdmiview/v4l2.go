@@ -358,7 +358,7 @@ func openVideo(path string, mode videoMode) (*videoCapture, error) {
 	if err := ioctl(fd, vidiocStreamOn, unsafe.Pointer(&t)); err != nil {
 		return fail("stream on", err)
 	}
-	slog.Info("video capture started", "device", path, "format", mode.Format,
+	slog.Debug("v4l2 streaming", "device", path, "format", mode.Format,
 		"width", f.Pix.Width, "height", f.Pix.Height, "fps", float64(p.Denominator)/float64(max(p.Numerator, 1)))
 	return v, nil
 }

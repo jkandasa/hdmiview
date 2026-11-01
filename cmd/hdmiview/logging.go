@@ -234,3 +234,13 @@ func logAt(level slog.Level, msg string, args ...any) {
 	r.Add(args...)
 	l.Handler().Handle(context.Background(), r)
 }
+
+// announce logs at info level regardless of the configured level, for the
+// few messages a user always needs (where to connect, a device came back).
+func announce(msg string, args ...any) {
+	var pcs [1]uintptr
+	runtime.Callers(2, pcs[:])
+	r := slog.NewRecord(time.Now(), slog.LevelInfo, msg, pcs[0])
+	r.Add(args...)
+	slog.Default().Handler().Handle(context.Background(), r)
+}

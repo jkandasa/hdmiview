@@ -16,13 +16,14 @@
   #main { flex: 1; min-height: 0; display: flex; }
   /* Fit: the image box fills the whole area and object-fit scales the
      picture up or down, keeping the aspect ratio (page and fullscreen). */
-  #wrap { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; background: #000; }
-  #video { display: block; width: 100%; height: 100%; object-fit: contain; }
+  #wrap { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: hidden; padding: 10px; box-sizing: border-box; }
+  #video { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
   /* 1:1: the size is set from JS (one video pixel per screen pixel);
      margin: auto centres it when smaller and still allows scrolling. */
   #wrap.native { overflow: auto; }
   #wrap.native #video { flex: none; margin: auto; object-fit: fill; image-rendering: pixelated; }
-  #wrap:fullscreen { width: 100vw; height: 100vh; }
+  /* the 10px margin is for the page only; fullscreen fills the screen */
+  #wrap:fullscreen { width: 100vw; height: 100vh; padding: 0; background: #000; }
   #recBtn.rec { background: #8a1f1f; border-color: #b33; }
   #recBtn.rec::before { content: "● "; animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0; } }

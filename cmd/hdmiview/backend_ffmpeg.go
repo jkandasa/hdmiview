@@ -157,7 +157,7 @@ func (b *ffmpegBackend) openVideo(dev string, mode videoMode) (videoStream, erro
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("video capture started", "device", dev, "format", mode.Format, "width", mode.Width, "height", mode.Height, "fps", mode.FPS)
+	slog.Debug("ffmpeg video started", "device", dev, "format", mode.Format, "width", mode.Width, "height", mode.Height, "fps", mode.FPS)
 	return &ffmpegVideo{ffmpegProc: s, r: newMJPEGReader(s.out)}, nil
 }
 
@@ -176,7 +176,7 @@ func (b *ffmpegBackend) runAudio(dev string, h *hub, stop <-chan struct{}) error
 	if err != nil {
 		return err
 	}
-	slog.Info("audio capture started", "device", dev, "rate", audioRate, "channels", audioChannels)
+	slog.Debug("ffmpeg audio started", "device", dev)
 	go func() {
 		<-stop
 		s.close()
