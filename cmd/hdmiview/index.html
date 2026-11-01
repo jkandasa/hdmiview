@@ -24,8 +24,9 @@
   #wrap.native #video { flex: none; margin: auto; object-fit: fill; image-rendering: pixelated; }
   /* the 10px margin is for the page only; fullscreen fills the screen */
   #wrap:fullscreen { width: 100vw; height: 100vh; padding: 0; background: #000; }
-  #recBtn.rec { background: #8a1f1f; border-color: #b33; }
-  #recBtn.rec::before { content: "● "; animation: blink 1s steps(2) infinite; }
+  .recToggle.rec { background: #8a1f1f; border-color: #b33; }
+  .recToggle.rec::before { content: "● "; animation: blink 1s steps(2) infinite; }
+  #recPanelBtn { margin-top: 6px; }
   @keyframes blink { 50% { opacity: 0; } }
   #recList { list-style: none; padding: 0; margin: 6px 0; font-size: 12px; }
   #recList li { display: flex; gap: 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid #262626; }
@@ -64,11 +65,11 @@
   <button id="audioBtn">Audio</button>
   <button id="muteBtn" title="Mute">🔊</button>
   <input id="vol" type="range" min="0" max="3" step="0.05" value="1" title="Volume">
-  <button id="recBtn" title="Record video and audio to a file on the server">Record</button>
-  <button id="setBtn">⚙ Settings</button>
   <button id="sizeBtn" title="Show the video at its actual size">1:1</button>
   <button id="fsBtn">Fullscreen</button>
   <button id="snapBtn" title="Save a snapshot to the snapshots folder on the server">Snapshot</button>
+  <button id="recBtn" class="recToggle" title="Record video and audio to a file on the server">Record</button>
+  <button id="setBtn">⚙ Settings</button>
   <span id="stats">connecting…</span>
 </div>
 <div id="main">
@@ -129,6 +130,7 @@
       </select><span></span></div>
     <div class="row"><label for="recAudio">Audio</label><label><input id="recAudio" type="checkbox"> record audio</label><span></span></div>
     <div class="hint" id="recHint"></div>
+    <button id="recPanelBtn" class="recToggle">Record</button>
     <div class="msg" id="recMsg"></div>
     <ul id="recList"></ul>
 
@@ -485,11 +487,12 @@ let recState = null;
 
 function renderRec(st) {
   recState = st;
-  const btn = $("recBtn");
-  btn.disabled = !st.available;
-  btn.classList.toggle("rec", st.active);
-  btn.textContent = st.active ? `Stop ${fmtTime(st.seconds || 0)} · ${fmtBytes(st.bytes || 0)}` : "Record";
-  btn.title = st.available ? "Record video and audio to a file on the server" : "ffmpeg not found on the server";
+  for (const btn of document.querySelectorAll(".recToggle")) {   // top bar and settings panel
+    btn.disabled = !st.available;
+    btn.classList.toggle("rec", st.active);
+    btn.textContent = st.active ? `Stop ${fmtTime(st.seconds || 0)} · ${fmtBytes(st.bytes || 0)}` : "Record";
+    btn.title = st.available ? "Record video and audio to a file on the server" : "ffmpeg not found on the server";
+  }
 
   if ($("recFmt").options.length === 0 && st.formats) {
     for (const k of ["mp4", "mkv"]) if (st.formats[k]) $("recFmt").add(new Option(st.formats[k], k));
@@ -548,14 +551,15 @@ async function pollRec() {
   try { renderRec(await api("/api/record")); } catch (e) { setMsg("recMsg", e.message, true); }
 }
 
-$("recBtn").onclick = async () => {
-  $("recBtn").disabled = true;
+async function toggleRecording() {
+  for (const b of document.querySelectorAll(".recToggle")) b.disabled = true;
   try {
     const body = recState?.active ? { action: "stop" } : { action: "start", format: recPrefs.format, quality: recPrefs.quality, codec: recPrefs.codec, encoder: $("recEnc").value, audio: recPrefs.audio };
     await api("/api/record", body);
   } catch (e) { alert("Recording: " + e.message); }
   await pollRec();
-};
+}
+$("recBtn").onclick = $("recPanelBtn").onclick = toggleRecording;
 pollRec();
 setInterval(() => { if (recState?.active || !$("panel").hidden) pollRec(); }, 1000);
 
