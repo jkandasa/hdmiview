@@ -176,9 +176,12 @@ func writeValue(b *bytes.Buffer, v slog.Value) {
 // setupLogging installs the default logger. format is "console" (zap
 // development style) or "json" (zap production style keys).
 func setupLogging(level, format string) error {
+	if strings.EqualFold(level, "warning") {
+		level = "warn"
+	}
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {
-		return fmt.Errorf("log level %q: use debug, info, warn or error", level)
+		return fmt.Errorf("log level %q: use debug, info, warning or error", level)
 	}
 	var h slog.Handler
 	switch strings.ToLower(format) {

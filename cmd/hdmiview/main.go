@@ -210,7 +210,7 @@ func main() {
 	settingsPath := flag.String("settings", defaultSettingsPath(), "file to remember the video mode (\"\" = don't save)")
 	recordDir := flag.String("recordings", "", "folder for recordings (default: saved setting or ~/Videos/hdmiview)")
 	snapDir := flag.String("snapshots", "", "folder for snapshots (default: saved setting or ~/Pictures/hdmiview)")
-	logLevel := flag.String("log-level", "warn", "log level: debug, info, warn, error")
+	logLevel := flag.String("log-level", "warning", "log level: debug, info, warning (or warn), error")
 	logFormat := flag.String("log-format", "console", "log format: console (zap development style) or json (zap production style)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Usage = func() {

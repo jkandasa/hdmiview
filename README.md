@@ -74,6 +74,10 @@ make dist       # Linux and Windows release archives in dist/
 make dist DIST_TARGETS="darwin/amd64 darwin/arm64"   # on macOS (needs cgo)
 ```
 
+`make` builds slim binaries: `-trimpath` (no local paths) and
+`-ldflags "-s -w"` (no symbol table or debug info), about a third smaller
+than a plain `go build`. Release archives are built the same way.
+
 The version comes from `git describe`. Check it with `--version`:
 
 ```
@@ -160,20 +164,20 @@ in 2 second fragments and stay playable if recording is interrupted.
 
 ### Flags
 
-| Flag                                    | Default                            | Description                                                                          |
-| --------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------ |
-| `--listen`                              | `127.0.0.1:8080`                   | HTTP address. Use `0.0.0.0:8080` to allow other machines on the network.             |
-| `--video`                               | auto-detect                        | Linux: V4L2 device, e.g. `/dev/video0`. Windows/macOS: device name, e.g. `USB Video` |
-| `--audio`                               | auto-detect                        | Linux: ALSA device. Windows/macOS: device name. `none` disables audio                |
-| `--match`                               | `MS2109`                           | Device name used for auto-detection                                                  |
-| `--format` `--width` `--height` `--fps` | `MJPG` 1920×1080 30                | Initial video mode. Overrides the saved mode.                                        |
-| `--quality`                             | `90`                               | JPEG quality used for YUYV                                                           |
-| `--recordings`                          | `~/Videos/hdmiview`                | Folder for recordings. Overrides the saved folder.                                   |
-| `--snapshots`                           | `~/Pictures/hdmiview`              | Folder for snapshots. Overrides the saved folder.                                    |
-| `--settings`                            | `~/.config/hdmiview/settings.json` | Where the video mode and folders are remembered. `""` disables saving.               |
-| `--log-level`                           | `warn`                             | `debug`, `info`, `warn` or `error`. The startup URL and "device found" always show   |
-| `--log-format`                          | `console`                          | `console` (zap development style) or `json` (zap production style)                   |
-| `--version`                             |                                    | Print version and exit                                                               |
+| Flag                                    | Default                            | Description                                                                                       |
+| --------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `--listen`                              | `127.0.0.1:8080`                   | HTTP address. Use `0.0.0.0:8080` to allow other machines on the network.                          |
+| `--video`                               | auto-detect                        | Linux: V4L2 device, e.g. `/dev/video0`. Windows/macOS: device name, e.g. `USB Video`              |
+| `--audio`                               | auto-detect                        | Linux: ALSA device. Windows/macOS: device name. `none` disables audio                             |
+| `--match`                               | `MS2109`                           | Device name used for auto-detection                                                               |
+| `--format` `--width` `--height` `--fps` | `MJPG` 1920×1080 30                | Initial video mode. Overrides the saved mode.                                                     |
+| `--quality`                             | `90`                               | JPEG quality used for YUYV                                                                        |
+| `--recordings`                          | `~/Videos/hdmiview`                | Folder for recordings. Overrides the saved folder.                                                |
+| `--snapshots`                           | `~/Pictures/hdmiview`              | Folder for snapshots. Overrides the saved folder.                                                 |
+| `--settings`                            | `~/.config/hdmiview/settings.json` | Where the video mode and folders are remembered. `""` disables saving.                            |
+| `--log-level`                           | `warning`                          | `debug`, `info`, `warning` (or `warn`) or `error`. The startup URL and "device found" always show |
+| `--log-format`                          | `console`                          | `console` (zap development style) or `json` (zap production style)                                |
+| `--version`                             |                                    | Print version and exit                                                                            |
 
 Audio settings (volume, channel mode, latency) are stored in the browser.
 
