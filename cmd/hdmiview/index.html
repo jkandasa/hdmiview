@@ -14,6 +14,8 @@
   #bar { display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: #1c1c1c; flex-wrap: wrap; }
   #volPct { min-width: 3.2em; color: #aaa; font-variant-numeric: tabular-nums; }
   #volPct.muted { text-decoration: line-through; color: #777; }
+  #volPct.off, #volVal.off { opacity: .4; }
+  input[type=range]:disabled { opacity: .4; }
   #stats { margin-left: auto; font-variant-numeric: tabular-nums; color: #999; }
   #main { flex: 1; min-height: 0; display: flex; }
   /* Fit: the image box fills the whole area and object-fit scales the
@@ -425,6 +427,10 @@ function updateAudioBtn() {
   b.textContent = !ctx ? "Audio off" : waiting ? "Click anywhere for audio" : "Audio on";
   b.classList.toggle("on", !!ctx && !waiting);
   b.title = waiting ? "The browser blocks sound until you interact with the page. Allow sound for this site to skip this." : "Turn audio on/off";
+  // volume controls only make sense while audio is on
+  $("muteBtn").disabled = $("vol").disabled = $("vol2").disabled = !ctx;
+  $("volPct").classList.toggle("off", !ctx);
+  $("volVal").classList.toggle("off", !ctx);
 }
 
 function stopAudio() {
