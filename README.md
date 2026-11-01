@@ -136,8 +136,8 @@ replugging is handled automatically.
 
 | Choice    | Options                                                                            |
 | --------- | ---------------------------------------------------------------------------------- |
+| Format    | **MP4** with AAC audio, or **MKV** with Opus audio                                 |
 | Codec     | **H.265** (default, smallest files) or **H.264** (plays on practically everything) |
-| Container | **MP4** with AAC audio, or **MKV** with Opus audio                                 |
 | Quality   | High, Normal or Small (also sets the audio bitrate)                                |
 | Audio     | On or off                                                                          |
 

@@ -108,12 +108,12 @@
     <div class="hint">Audio format is fixed by the firmware: 48 kHz stereo 16-bit. Audio settings are stored in this browser.</div>
 
     <h3>Recording</h3>
+    <div class="row"><label for="recFmt">Format</label><select id="recFmt"></select><span></span></div>
     <div class="row"><label for="recCodec">Codec</label>
       <select id="recCodec">
         <option value="h265">H.265 (smaller)</option>
         <option value="h264">H.264 (plays everywhere)</option>
       </select><span></span></div>
-    <div class="row"><label for="recFmt">Container</label><select id="recFmt"></select><span></span></div>
     <div class="row" id="recQualRow"><label for="recQual">Quality</label>
       <select id="recQual">
         <option value="high">High (larger)</option>
@@ -511,12 +511,14 @@ function renderRec(st) {
 }
 
 function recFormUI() {
-  $("recHint").textContent = ($("recCodec").value === "h265"
+  const mp4 = $("recFmt").value === "mp4";
+  $("recHint").textContent =
+    (mp4 ? "MP4: AAC audio, widest compatibility. " : "MKV: Opus audio, smallest audio track. ") +
+    ($("recCodec").value === "h265"
       ? "H.265: smallest files; needs a recent player (VLC, mpv, browsers with HEVC support). "
       : "H.264: slightly larger files; plays on practically everything. ") +
     "Encoded on the GPU when available, otherwise on the CPU. A static screen costs almost nothing. " +
-    ($("recFmt").value === "mp4" ? "MP4: AAC audio, widest compatibility." : "MKV: Opus audio, smallest audio track.") +
-    " Audio bitrate follows the quality: " + ($("recFmt").value === "mp4" ? "160 / 128 / 96" : "128 / 96 / 64") + " kbit/s.";
+    "Audio bitrate follows the quality: " + (mp4 ? "160 / 128 / 96" : "128 / 96 / 64") + " kbit/s.";
 }
 $("recFmt").onchange = () => { recPrefs.format = $("recFmt").value; saveRecPrefs(); recFormUI(); };
 $("recQual").onchange = () => { recPrefs.quality = $("recQual").value; saveRecPrefs(); };
